@@ -9,17 +9,19 @@ use clap::Parser;
                 job or CTF", long_about = None)]
 struct Arg {
     #[clap(short, long, value_parser)]
-    Customer: Option<String>,
+    name: Option<String>,
 
     #[clap(short, long, value_parser)]
-    HackTheBox: Option<String>,
+    HTB: Option<String>,
+
+    #[clap(short, long, value_parser)]
+    THM: Option<String>,
+
 }
 
 fn main() {
 
     let args = Arg::parse();
-
-    println!("Hello {:?}", args.Customer.as_deref());
 
 
 }
