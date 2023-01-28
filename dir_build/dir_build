@@ -1,0 +1,29 @@
+#!/bin/bash
+
+#Command line functions
+help() {
+	echo "yo"; 
+}
+
+build() {
+ echo $var
+}
+
+#Initialise with path name
+var=$2;
+
+#Command line arguments
+while getopts ":h:t:b" option; do
+	case $option in
+		h) help
+		   exit;;
+		t) build var
+			 exit;;
+		b) build var
+			 exit;;
+		\?) echo "Invalid Option";
+			help
+			exit;;
+	esac
+done
+
