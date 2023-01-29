@@ -12,10 +12,10 @@ version() {
 
 build() {
  	case $flag in
- 		-t) echo "./share/THM/$lab";;
-		-b) echo "./share/HTB/$lab";;
-		-e) echo "./share/exam/$lab";;
-		-w) echo "./share/work/$lab";;
+ 		-t) echo ~/share/THM/$lab;;
+		-b) echo ~/share/HTB/$lab;;
+		-e) echo ~/share/exam/$lab;;
+		-w) echo ~/share/work/$lab;;
 	esac
 }
 
@@ -48,4 +48,5 @@ dir=$(build);
 /bin/clear;
 /bin/mkdir -p $dir;
 echo $dir;
-/bin/cd $dir;
+cd $dir;
+$SHELL;
