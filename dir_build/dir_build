@@ -6,20 +6,24 @@ help() {
 }
 
 build() {
- echo $var
+ echo $flag $lab;
 }
 
-#Initialise with path name
-var=$2;
+
+#Positional Parameters
+flag=$1
+lab=$2;
 
 #Command line arguments
-while getopts ":h:t:b" option; do
+while getopts ":ht:b:" option; do
 	case $option in
 		h) help
 		   exit;;
-		t) build var
+		#THM
+		t) build $flag $lab 
 			 exit;;
-		b) build var
+	    #HTB
+		b) build $flag $lab
 			 exit;;
 		\?) echo "Invalid Option";
 			help
