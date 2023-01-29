@@ -5,29 +5,47 @@ help() {
 	echo "yo"; 
 }
 
-build() {
- echo $flag $lab;
+version() {
+	echo "version 1.0";
+	echo "Built by Daniel Roberts";
 }
 
+build() {
+ 	case $flag in
+ 		-t) echo "./share/THM/$lab";;
+		-b) echo "./share/HTB/$lab";;
+		-e) echo "./share/exam/$lab";;
+		-w) echo "./share/work/$lab";;
+	esac
+}
 
 #Positional Parameters
 flag=$1
 lab=$2;
 
 #Command line arguments
-while getopts ":ht:b:" option; do
+while getopts ":ht:b:ve:w:" option; do
 	case $option in
 		h) help
 		   exit;;
 		#THM
-		t) build $flag $lab 
-			 exit;;
+		t) build $flag $lab;; 
 	    #HTB
-		b) build $flag $lab
-			 exit;;
+		b) build $flag $lab;;
+		#Exam
+		e) build $flag $lab;;
+		#Work
+		w) build $flag $lab;;
+		v) version
+		   exit;;
 		\?) echo "Invalid Option";
 			help
 			exit;;
 	esac
 done
 
+dir=$(build);
+/bin/clear;
+/bin/mkdir -p $dir;
+echo $dir;
+/bin/cd $dir;
