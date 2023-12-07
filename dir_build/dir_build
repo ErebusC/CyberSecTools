@@ -2,51 +2,53 @@
 
 #Command line functions
 help() {
-	echo "yo"; 
+	echo "test"; 
 }
 
 version() {
-	echo "version 1.0";
-	echo "Built by Daniel Roberts";
+	echo $'version 1.1\nBuilt by Daniel Roberts';
 }
+
+base=~/Share;
 
 build() {
  	case $flag in
- 		-t) echo ~/share/THM/$lab;;
-		-b) echo ~/share/HTB/$lab;;
-		-e) echo ~/share/exam/$lab;;
-		-w) echo ~/share/work/$lab;;
+ 		-t) echo $base/THM/$lab;;
+		-b) echo $base/HTB/$lab;;
+		-e) echo $base/exam/$lab;;
+		-w) echo $base/work/$lab;;
 	esac
 }
 
 #Positional Parameters
-flag=$1
+flag=$1;
 lab=$2;
 
-#Command line arguments
-while getopts ":ht:b:ve:w:" option; do
-	case $option in
+
+
+if [[ $OPTIND -eq 1 ]] && [[ -z $flag  ]]; then echo "No options were passed";
+	shift $((OPTIND-1));
+	exit;
+else
+	#Command line arguments
+	while getopts ":ht:b:ve:w:" option; do
+		case $option in
+		#THM, HTB, Exam or Work
+		t | b | e | w ) build $flag $lab;; 
 		h) help
 		   exit;;
-		#THM
-		t) build $flag $lab;; 
-	    #HTB
-		b) build $flag $lab;;
-		#Exam
-		e) build $flag $lab;;
-		#Work
-		w) build $flag $lab;;
 		v) version
 		   exit;;
 		\?) echo "Invalid Option";
 			help
 			exit;;
-	esac
-done
+		esac
 
-dir=$(build);
-/bin/clear;
-/bin/mkdir -p $dir;
-echo $dir;
-cd $dir;
-$SHELL;
+		dir=$(build);
+		/bin/clear;
+		/bin/mkdir -p $dir;
+		echo $dir;
+		cd $dir;
+		$SHELL;
+	done
+fi
