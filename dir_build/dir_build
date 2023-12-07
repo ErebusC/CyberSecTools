@@ -2,7 +2,16 @@
 
 #Command line functions
 help() {
-	echo "test"; 
+	echo $'dir_build [options] <lab> or  dir_build <options>\n
+
+	Options list:\n
+	-h  			this page\n
+	-t			Create a lab directory within /THM\n 
+	-b			Creates a lab directory within /HTB\n
+	-p			Creates a lab directory within /swigger\n
+	-e			Creates a directory within /exam for when you are sitting practical assessments\n
+	-w			Creates a directory within /work for your current engagement\n';
+
 }
 
 version() {
@@ -17,6 +26,7 @@ build() {
 		-b) echo $base/HTB/$lab;;
 		-e) echo $base/exam/$lab;;
 		-w) echo $base/work/$lab;;
+		-p) echo $base/swigger/$lab;;
 	esac
 }
 
@@ -34,7 +44,7 @@ else
 	while getopts ":ht:b:ve:w:" option; do
 		case $option in
 		#THM, HTB, Exam or Work
-		t | b | e | w ) build $flag $lab;; 
+		t | b | e | w | p) build $flag $lab;; 
 		h) help
 		   exit;;
 		v) version
