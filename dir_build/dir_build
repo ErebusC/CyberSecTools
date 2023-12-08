@@ -57,6 +57,13 @@ else
 		dir=$(build);
 		/bin/clear;
 		/bin/mkdir -p $dir;
+		if [[ $flag = "-w" ]]; 
+		then
+			/bin/mkdir $dir/nmap
+			/bin/mkdir $dir/burp
+			/bin/mkdir $dir/nessus
+			/bin/mkdir $dir/other
+		fi
 		echo $dir;
 		cd $dir;
 		$SHELL;
