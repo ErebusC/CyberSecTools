@@ -1,9 +1,14 @@
-#/bin/bash
+#!/bin/bash
 
-location=$1
-job=$2
+##Function to create the burp file and delete any temporary files it leaves behind.
+create_file() {
 
-java -jar -Djava.awt.headless=true /home/danny/BurpSuitePro/burpsuite_pro.jar --project-file=$location/$job.burp & sleep 30s; 
-pkill -f burpsuite_pro.jar;
+	location=$1
+	job=$2
 
-rm -r /tmp/burp*;
+	java -jar -Djava.awt.headless=true /home/danny/BurpSuitePro/burpsuite_pro.jar --project-file=$location/burp/$job.burp & sleep 45s; 
+	pkill -f burpsuite_pro.jar;
+
+	rm -r /tmp/burp*;
+}
+
