@@ -10,7 +10,7 @@ help() {
 	-b			Creates a lab directory within /HTB\n
 	-p			Creates a lab directory within /swigger\n
 	-e			Creates a directory within /exam for when you are sitting practical assessments\n
-	-w			Creates a directory within /work for your current engagement\n';
+	-w			Creates directories within /work for your current engagement. This includes a folder for Burp, Nessus and NMAP.\n';
 
 }
 
@@ -61,6 +61,11 @@ else
 		then
 			/bin/mkdir $dir/nmap
 			/bin/mkdir $dir/burp
+			
+			##Source burp script and create file
+			source burper
+			create_file $dir $lab
+			
 			/bin/mkdir $dir/nessus
 			/bin/mkdir $dir/other
 		fi
