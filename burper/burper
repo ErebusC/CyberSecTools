@@ -1,5 +1,14 @@
 #!/bin/bash
 
+help() {
+	echo $'burper <options> or burper [directory name] [filename]';
+}
+
+version() {
+	echo $'version 1\nBuilt by Daniel Roberts';
+}
+
+
 ##Function to create the burp file and delete any temporary files it leaves behind.
 create_file() {
 
@@ -12,3 +21,24 @@ create_file() {
 	rm -r /tmp/burp*;
 }
 
+
+if [[ $OPTIND -eq 1 ]] && [[ -z $1  ]]; then echo "No options were passed";
+	shift $((OPTIND-1));
+	exit;
+
+elif [[ "$1" != "-h" ]] && [[ "$1" != "-v" ]]; then
+		create_file $1 $2;
+else
+	#Command line arguments
+	while getopts ":hv" option; do
+		case $option in
+		h) help
+		   exit;;
+		v) version
+		   exit;;
+		\?) echo "Invalid Option";
+			help
+			exit;;
+		esac
+	done
+fi
