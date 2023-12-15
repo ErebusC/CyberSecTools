@@ -4,30 +4,42 @@ file=$1;
 
 #Removes the HTTP structure in a hostname
 remove_http() {
- sed -i -E -e 's/(https:\/\/|http:\/\/|)//g' -e 's/\/.*//g' $file;
+ if [[ $1 =~ ^([0-9]{1,3}+(\.|$)){4} ]]; then
+ 	exit;
+ else 
+ 	sed -E -e 's/(https:\/\/|http:\/\/|)//g' -e 's/\/.*//g' $file >> ./nessus/host;
+	
+  fi
 }
 
 #Expands IP address ranges
 expand_range() {
-	while read host; do
-
 		#If host is an IP range matches this pattern 10.10.10.1-10:
-		if [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}+\-[0-9]{1,3}$ ]]; then
+		if [[ "$1" =~ ^([0-9]{1,3}+(\.|)){4}+\-[0-9]{1,3}$ ]]; then
 
 			#Take each line, obtain the digits indicating the range such as 1-10
-			input=$(echo "$host" |  grep -o '[0-9]\{1,3\}\b' | grep -Eo '.{1,3}' | tail -2);
+			input=$(echo "$1" |  grep -o '[0-9]\{1,3\}\b' | grep -Eo '.{1,3}' | tail -2);
 
 			#Obtain the first three octets of the range, to glue back together later
-			head=$(echo "$host" | sed -e 's/\.[^.]*$//');
+			head=$(echo "$1" | sed -e 's/\.[^.]*$//');
 			
 			#for every number in the sequence, glue the original three octets to the new IPs and put them in a new file
 			for i in $(seq $input); do
-				echo "$head.$i" >> hosts_new;
+				echo "$head.$i" >> ./nmap_host;
 			done
+		#If the range is CIDR notation
+		elif [[ $1 =~ ^([0-9]{1,3}+(\.|)){4}+\/[0-9]{1,2}$ ]]; then
+			nmap -sL -Pn -n $1 | grep -o '[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}' >> nmap_test;
+
+		#If a host within the file doesn't need exanding
+		elif [[ $1 =~ ^([0-9]{1,3}+(\.|$)){4} ]]; then
+			echo $1 >> ./nmap_host;
 		else
-			echo "fail: $host";
+			echo "fail: $1";
 		fi
-	done < $file;
 }
 
-expand_range $file
+while read host; do
+	remove_http $host;
+	expand_range $host;
+done
