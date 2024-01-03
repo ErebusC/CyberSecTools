@@ -20,14 +20,20 @@ version() {
 
 base=~/Share;
 
-build() {
+base() {
  	case $flag in
- 		-t) echo $base/THM/$lab;;
-		-b) echo $base/HTB/$lab;;
-		-e) echo $base/exam/$lab;;
-		-w) echo $base/work/$lab;;
-		-p) echo $base/swigger/$lab;;
+ 		-t) base=$base/THM/$lab;;
+		-b) base=$base/HTB/$lab;;
+		-e) base=$base/exam/$lab;;
+		-w) base=$base/work/$lab;;
+		-p) base=$base/swigger/$lab;;
 	esac
+
+	echo $build $base;
+}
+
+build(){
+	mkdir -p $1;
 }
 
 #Positional Parameters
@@ -44,7 +50,7 @@ else
 	while getopts ":ht:b:ve:w:" option; do
 		case $option in
 		#THM, HTB, Exam or Work
-		t | b | e | w | p) build $flag $lab;; 
+		t | b | e | w | p) base $flag $lab;; 
 		h) help
 		   exit;;
 		v) version
@@ -54,23 +60,22 @@ else
 			exit;;
 		esac
 
-		dir=$(build);
 		/bin/clear;
-		/bin/mkdir -p $dir;
+
 		if [[ $flag = "-w" ]]; 
 		then
-			/bin/mkdir $dir/nmap
-			/bin/mkdir $dir/burp
+			build $base/nmap
+			build $base/burp
 			
 			##Source burp script and create file
 			source burper
-			create_file $dir $lab
+			create_file $base $lab
 			
-			/bin/mkdir $dir/nessus
-			/bin/mkdir $dir/other
+			build $base/nessus
+			build $base/other
 		fi
-		echo $dir;
-		cd $dir;
+		echo $base;
+		cd $base;
 		$SHELL;
 	done
 fi
