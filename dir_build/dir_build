@@ -68,8 +68,7 @@ else
 			build $base/burp
 			
 			##Source burp script and create file
-			source burper
-			create_file $base $lab
+			source burper $base $lab
 			
 			build $base/nessus
 			build $base/other
