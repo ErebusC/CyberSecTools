@@ -65,16 +65,18 @@ else
 		if [[ $flag = "-w" ]]; 
 		then
 			build $base/nmap
-			build $base/burp
-			
-			##Source burp script and create file
-			source burper $base $lab
-			
+			build $base/burp			
 			build $base/nessus
 			build $base/other
+
+			##Source burp script and create file
+			source burper $base $lab &
 		fi
-		echo $base;
-		cd $base;
-		$SHELL;
+		if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; 
+		then
+			echo $base;
+			cd $base;
+			$SHELL;
+		fi
 	done
 fi

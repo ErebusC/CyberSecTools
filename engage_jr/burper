@@ -15,7 +15,7 @@ create_file() {
 	location=$1
 	job=$2
 
-	java -jar -Djava.awt.headless=true /home/danny/BurpSuitePro/burpsuite_pro.jar --project-file=$location/burp/$job.burp & sleep 45s; 
+	java -jar -Djava.awt.headless=true /home/danny/BurpSuitePro/burpsuite_pro.jar --project-file=$location/burp/$job.burp & sleep 60s; 
 	pkill -f burpsuite_pro.jar;
 
 	rm -r /tmp/burp*;
