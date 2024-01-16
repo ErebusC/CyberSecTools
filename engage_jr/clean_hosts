@@ -1,10 +1,11 @@
 #!/bin/bash
 
 file=$1;
+new_loc=$(pwd);
 
 #Removes the HTTP structure in a hostname
 remove_http() {
- 	sed -E -e 's/(https:\/\/|http:\/\/|)//g' -e 's/\/.*//g' <<< $1 | tee -a hosts nohttp_hosts > /dev/null;
+ 	sed -E -e 's/(https:\/\/|http:\/\/|)//g' -e 's/\/.*//g' <<< $1 | tee -a $new_loc/hosts $new_loc/nohttp_hosts > /dev/null;
 }
 
 #Expands IP address ranges
@@ -20,15 +21,15 @@ expand_range() {
 			
 			#for every number in the sequence, glue the original three octets to the new IPs and put them in a new file
 			for i in $(seq $input); do
-				echo "$head.$i" >> hosts;
+				echo "$head.$i" >> $new_loc/hosts;
 			done
 		#If the range is CIDR notation
 		elif [[ $1 =~ ^([0-9]{1,3}+(\.|)){4}+\/[0-9]{1,2}$ ]]; then
-			nmap -sL -Pn -n $1 | grep -o '([0-9]{1,3}+(\.|)){4}' >> hosts;
+			nmap -sL -n $1 | grep -o '([0-9]{1,3}+(\.|)){4}' >> $new_loc/hosts;
 
 		#If a host within the file doesn't need exanding
 		elif [[ $1 =~ ^([0-9]{1,3}+(\.|$)){4} ]]; then
-			echo $1 >> hosts;
+			echo $1 >> $new_loc/hosts;
 		else
 			echo "fail: $1";
 		fi
@@ -38,9 +39,10 @@ while read host; do
 	if [[ $host =~ ([0-9]{1,3}+(\.|)){4} ]]; then
 		expand_range $host;	
 	elif [[ $host =~ http ]]; then
-		echo $host | tee -a http_hosts > /dev/null;
+		echo $host | tee -a $new_loc/http_hosts > /dev/null;
 		remove_http $host;
 	else
-		echo $host >> hosts;
+
+		echo $host >> $new_loc/hosts;
 	fi
 done < $file

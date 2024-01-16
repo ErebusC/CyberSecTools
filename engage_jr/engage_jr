@@ -1,0 +1,12 @@
+#/bin/bash
+
+job=$1;
+hosts=$(pwd)/$2;
+
+source dir_build -w $job; 
+
+echo $base;
+cd $base;
+clean_hosts $hosts;
+
+$SHELL;
