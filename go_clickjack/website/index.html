@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" type="text/css" href="./index.css">
+	<title>Cyberis ClickJacking Website</title>
+
+	<script type="text/javascript">
+		function loadWebsite(){
+			document.getElementsByName("website")[0].src=document.getElementsByName("webInput")[0].value;
+		}
+	</script>
+</head>
+<body>
+	<nav> 
+		Cyberis Clickjacker
+	</nav>
+	<div>
+		Insert web page to clickjack: <input name="webInput">  <button onclick="loadWebsite()">Submit</button>
+	</div>
+		<iframe name=website src="http://localhost:9999"></iframe>
+</body>
+</html>
