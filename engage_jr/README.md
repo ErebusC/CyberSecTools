@@ -15,5 +15,5 @@ engage_jr $NameOfEngagement $HostFile
 
 ## Example
 
-![ Alt text](Peek 2024-01-19 10-11.gif) [](Peek 2024-01-19 10-11.gif)
+![ Alt text]("Peek 2024-01-19 10-11.gif") []("Peek 2024-01-19 10-11.gif")
 
