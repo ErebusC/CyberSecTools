@@ -3,29 +3,44 @@ body{
 	margin:0px;
 	background-color: #425563;
 	color: white;
+	overflow: hidden;
+	font-family: 'Muli', Arial, Helvetica, san-serif;
 }
 
 nav {
 	background-color: white;
 	text-align: center;
 	color: #425563;
-	padding: 75rem;
-	font-family: 'Muli', Arial, Helvetica, san-serif;
-	font-size: 20px;
-
+	padding: 0.5%;
+	font-size: 2em;
+	font-family: 'Open Sans';
 	-webkit-text-stroke-width: 0.2px;
   	-webkit-text-stroke-color: #2f3640;
 }
 
+nav img{
+	width:6.1em;
+	vertical-align: text-bottom;
+}
+
 div{
-	padding-top: 3%;
+	font-size: 1.5em;
+	padding-top: 2%;
 	top: 18%;
   	left: 25%;
   	position: relative;
 }
 
+div input{
+	width: 30%;
+	font-size: 1.2em;
+}
+div button{
+	font-size: 1.2em;
+}
+
 iframe{
-	top: 18%;
+	top: 15%;
   	left: 25%;
 	display: block;
 	height: 70%;
