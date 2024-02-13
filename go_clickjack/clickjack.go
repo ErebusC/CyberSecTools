@@ -17,8 +17,11 @@ type website struct {
 func main() {
 	args := os.Args
 
+	openBrowser("http://localhost:9999")
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+
 	if len(args) == 2 {
-		tmpl := template.Must(template.ParseFiles("website/index.html"))
+		tmpl := template.Must(template.ParseFiles("html/index.html"))
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			data := website{
 				Site: args[1],
@@ -26,21 +29,16 @@ func main() {
 
 			tmpl.Execute(w, data)
 		})
-
-		http.Handle("/website/", http.StripPrefix("/website/", http.FileServer(http.Dir("website"))))
 		http.ListenAndServe(":9999", nil)
 	} else {
-		http.Handle("/", http.FileServer(http.Dir("./website")))
+		http.Handle("/", http.FileServer(http.Dir("./html")))
 		http.ListenAndServe(":9999", nil)
 	}
 
-	openBrowser("http://localhost:9999")
-	
-}
+}	
 
 func openBrowser(targetURL string) {
     var err error
-
     switch runtime.GOOS {
     case "linux":
         err = exec.Command("xdg-open", targetURL).Start()
