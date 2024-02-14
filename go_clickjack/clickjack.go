@@ -43,6 +43,7 @@ func main() {
 
 }	
 
+//This was taken from here; https://code-maven.com/slides/golang/open-web-browser. 
 func openBrowser(targetURL string) {
     var err error
     switch runtime.GOOS {
