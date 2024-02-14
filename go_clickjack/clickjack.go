@@ -66,6 +66,7 @@ func openBrowser(targetURL string) {
     func frameResponse(targetURL string) {
     	tmpl := template.Must(template.ParseFS(templatesFS, "html/index.html"))
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Frame-Options", "Deny")
 			data := website{
 				Site: targetURL,
 			}
