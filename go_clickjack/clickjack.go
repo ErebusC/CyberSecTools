@@ -25,12 +25,20 @@ var (
 )
 
 func main() {
+	envVariable := os.Getenv("CONTAINER")
+
+	if envVariable == "TRUE"{
+		route()
+	} else {
+		openBrowser("http://localhost:9999")
+		route()
+	}
+}
+
+func route(){
 	args := os.Args
 
-	openBrowser("http://localhost:9999")
-
-
-    var staticFs = http.FS(staticFS)
+	var staticFs = http.FS(staticFS)
 	staticFile := http.FileServer(staticFs)
 
 	http.Handle("/static/", staticFile)
@@ -40,8 +48,21 @@ func main() {
 	} else {
 		frameResponse("https://bing.co.uk")
 	}
-
 }	
+
+func frameResponse(targetURL string) {
+    tmpl := template.Must(template.ParseFS(templatesFS, "html/index.html"))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Frame-Options", "Deny")
+		data := website{
+			Site: targetURL,
+		}
+
+		tmpl.Execute(w, data)
+	})
+	http.ListenAndServe(":9999", nil)
+}
+
 
 //This was taken from here; https://code-maven.com/slides/golang/open-web-browser. 
 func openBrowser(targetURL string) {
@@ -63,15 +84,3 @@ func openBrowser(targetURL string) {
     }
 }
 
-    func frameResponse(targetURL string) {
-    	tmpl := template.Must(template.ParseFS(templatesFS, "html/index.html"))
-		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("X-Frame-Options", "Deny")
-			data := website{
-				Site: targetURL,
-			}
-
-			tmpl.Execute(w, data)
-		})
-		http.ListenAndServe(":9999", nil)
-    }
