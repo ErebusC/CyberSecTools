@@ -18,7 +18,7 @@
 		Clickjacker
 	</nav>
 	<div>
-		Insert web page to clickjack: <input name="webInput">  <button onclick="loadWebsite()">Submit</button>
+		Insert web page to clickjack: <input name="webInput" value="{{.Site}}">  <button onclick="loadWebsite()">Submit</button>
 	</div>
 		<iframe name=website src="{{.Site}}"></iframe>
 </body>
