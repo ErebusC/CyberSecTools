@@ -1,0 +1,26 @@
+id: 4cc735ed-d214-470c-91d3-f7711db31efd
+name: Hash Highlighter
+function: VIEW_FILTER
+location: PROXY_HTTP_HISTORY
+source: |+
+  if (!requestResponse.hasResponse()) {
+      return false;
+  }
+  
+  var response_body = requestResponse.response().bodyToString();
+  
+  boolean manualColorHighlightEnabled = true;
+  
+  String bcrypt_regex = "\\$2[abxy]\\$\\d{1,2}\\$[./A-Za-z0-9]{53}";
+  
+  Pattern bcrypt_pattern = Pattern.compile(bcrypt_regex);
+  
+  Matcher bcryptMatcher = bcrypt_pattern.matcher(response_body);
+  if(bcryptMatcher.find()) {
+  	if (manualColorHighlightEnabled) {
+          requestResponse.annotations().setHighlightColor(HighlightColor.MAGENTA);
+          requestResponse.annotations().setNotes("Bcrypt hash identified: "+ bcryptMatcher.group());
+      }
+  }
+  
+  return true;
