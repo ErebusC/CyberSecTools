@@ -28,7 +28,8 @@
 							<input type="submit" value="submit">
 							</form></div>
 		`;
-			document.body.appendChild(form);
+			document.head.appendChild(link);
+			document.getElementById('wrapper').appendChild(form)
 		}
 
 		async function sendData() {
@@ -55,12 +56,15 @@
 	<nav> 
 		Clickjacker
 	</nav>
-	<div>
-		Insert web page to clickjack: <input name="webInput" value="{{.Site}}">  <button onclick="loadWebsite()">Submit</button><br>
-		<input name="collabInput" value="{{.Collab}}"> <button onclick="clickjackOverlay()">Clickjack Page?</button>
-	</div>
+
+	<div id="wrapper">
+		<div>
+			Insert web page to clickjack: <input name="webInput" value="{{.Site}}">  <button onclick="loadWebsite()">Submit</button><br>
+			Inser collaborator address:  <input name="collabInput" value="{{.Collab}}"> <button onclick="clickjackOverlay()">Clickjack </button>
+		</div>
 	
-	<iframe name="website" src="{{.Site}}"></iframe>
+		<iframe name="website" src="{{.Site}}"></iframe>
+	</div>
 
 </body>
 </html>
