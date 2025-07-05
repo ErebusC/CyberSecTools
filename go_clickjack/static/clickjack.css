@@ -1,0 +1,10 @@
+#overlay {
+	top: 50% !important; 
+  	left: 25% !important;
+	height: 70% !important;
+	width: 50% !important;
+	border: 4px solid black !important;
+	position: absolute !important;
+	overflow: hidden !important;
+	background-color: grey !important;
+}
