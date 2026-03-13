@@ -1,10 +1,55 @@
 #overlay {
-	top: 50% !important; 
-  	left: 25% !important;
-	height: 70% !important;
-	width: 50% !important;
-	border: 4px solid black !important;
-	position: absolute !important;
-	overflow: hidden !important;
-	background-color: grey !important;
+	position: absolute;
+	top: 13%;
+	left: 1%;
+	width: 73%;
+	height: 87%;
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(66, 85, 99, 0.88);
+	box-sizing: border-box;
+}
+
+#overlay form {
+	background: white;
+	color: #2f3640;
+	padding: 2em 2.5em;
+	border: 2px solid #2f3640;
+	border-radius: 4px;
+	font-size: 1.1em;
+	min-width: 260px;
+	display: flex;
+	flex-direction: column;
+	gap: 0.4em;
+}
+
+#overlay form label {
+	font-weight: bold;
+	margin-top: 0.4em;
+}
+
+#overlay form input[type="text"],
+#overlay form input[type="password"] {
+	width: 100%;
+	padding: 0.4em;
+	font-size: 1em;
+	box-sizing: border-box;
+}
+
+#overlay form input[type="submit"] {
+	margin-top: 0.8em;
+	width: 100%;
+	padding: 0.5em;
+	font-size: 1em;
+	cursor: pointer;
+	background: #425563;
+	color: white;
+	border: none;
+	border-radius: 3px;
+}
+
+#overlay form input[type="submit"]:hover {
+	background: #536575;
 }
