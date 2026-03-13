@@ -50,17 +50,15 @@ nav {
 	box-sizing: border-box;
 	padding: 0.5% 0;
 	font-size: 1.1em;
-
-	/* Grid: label | input (flex) | primary btn | secondary btn/badge */
-	display: grid;
-	grid-template-columns: max-content 1fr auto auto;
-	align-items: center;
-	gap: 0.35em 0.6em;
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
 }
 
-/* Make control-row divs transparent to the grid */
 .control-row {
-	display: contents;
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
 }
 
 .control-label {
@@ -68,11 +66,11 @@ nav {
 }
 
 #controls input {
+	flex: 1;
 	min-width: 0;
 	font-size: 0.9em;
 	padding: 0.28em 0.4em;
 	box-sizing: border-box;
-	width: 100%;
 }
 
 #controls button {
@@ -84,35 +82,6 @@ nav {
 	min-width: 100px;
 }
 
-/* Frame status badge */
-.status-badge {
-	font-size: 0.8em;
-	font-weight: bold;
-	padding: 0.2em 0.7em;
-	border-radius: 3px;
-	min-width: 75px;
-	text-align: center;
-	visibility: hidden;
-	white-space: nowrap;
-}
-
-.status-badge.framed {
-	visibility: visible;
-	background-color: #2ecc71;
-	color: #1a1a1a;
-}
-
-.status-badge.blocked {
-	visibility: visible;
-	background-color: #e74c3c;
-	color: white;
-}
-
-.status-badge.loading {
-	visibility: visible;
-	background-color: #95a5a6;
-	color: white;
-}
 
 #overlay-reset {
 	background-color: #c0392b;
