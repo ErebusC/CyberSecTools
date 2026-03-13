@@ -22,6 +22,8 @@ type website struct {
 	Logo   string
 }
 
+const serverAddr = "http://localhost:9999"
+
 var (
 	//go:embed html/*
 	templatesFS embed.FS
@@ -43,15 +45,21 @@ func main() {
 		route(args, logoURL, logoPath)
 	} else {
 		go func() {
+			ready := false
 			for i := 0; i < 50; i++ {
-				resp, err := http.Get("http://localhost:9999")
+				resp, err := http.Get(serverAddr)
 				if err == nil {
 					resp.Body.Close()
+					ready = true
 					break
 				}
 				time.Sleep(100 * time.Millisecond)
 			}
-			openBrowser("http://localhost:9999")
+			if ready {
+				openBrowser(serverAddr)
+			} else {
+				log.Println("server did not become ready; skipping browser open")
+			}
 		}()
 		route(args, logoURL, logoPath)
 	}

