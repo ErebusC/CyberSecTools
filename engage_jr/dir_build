@@ -1,82 +1,61 @@
 #!/bin/bash
 
-#Command line functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+[[ -f "${SCRIPT_DIR}/config" ]] || { echo "ERROR: config not found at ${SCRIPT_DIR}/config" >&2; return 1 2>/dev/null || exit 1; }
+source "${SCRIPT_DIR}/config"
+
 help() {
-	echo $'dir_build [options] <lab> or  dir_build <options>\n
-
-	Options list:\n
-	-h  			this page\n
-	-t			Create a lab directory within /THM\n 
-	-b			Creates a lab directory within /HTB\n
-	-p			Creates a lab directory within /swigger\n
-	-e			Creates a directory within /exam for when you are sitting practical assessments\n
-	-w			Creates directories within /work for your current engagement. This includes a folder for Burp, Nessus and NMAP.\n';
-
+	echo "dir_build <flag> <name>"
+	echo ""
+	echo "  -t <name>   Create a lab directory within /${ENGAGEJR_THM_SUBDIR}"
+	echo "  -b <name>   Create a lab directory within /${ENGAGEJR_HTB_SUBDIR}"
+	echo "  -p <name>   Create a lab directory within /${ENGAGEJR_PS_SUBDIR}"
+	echo "  -e <name>   Create a directory within /${ENGAGEJR_EXAM_SUBDIR}"
+	echo "  -w <name>   Create directories within /${ENGAGEJR_WORK_SUBDIR} (includes burp, nmap, nessus, other)"
+	echo "  -h          This page"
+	echo "  -v          Version"
 }
 
 version() {
-	echo $'version 1.1\nBuilt by Daniel Roberts';
+	echo "version 2.0"
+	echo "Built by Daniel Roberts"
 }
 
-base=~/Share;
+local category=""
+local lab=""
 
-base() {
- 	case $flag in
- 		-t) base=$base/THM/$lab;;
-		-b) base=$base/HTB/$lab;;
-		-e) base=$base/exam/$lab;;
-		-w) base=$base/work/$lab;;
-		-p) base=$base/swigger/$lab;;
+while getopts ":hvt:b:e:p:w:" option; do
+	case $option in
+		h) help; return 0 2>/dev/null || exit 0 ;;
+		v) version; return 0 2>/dev/null || exit 0 ;;
+		t) category="${ENGAGEJR_THM_SUBDIR}";  lab="$OPTARG" ;;
+		b) category="${ENGAGEJR_HTB_SUBDIR}";  lab="$OPTARG" ;;
+		e) category="${ENGAGEJR_EXAM_SUBDIR}"; lab="$OPTARG" ;;
+		p) category="${ENGAGEJR_PS_SUBDIR}";   lab="$OPTARG" ;;
+		w) category="${ENGAGEJR_WORK_SUBDIR}"; lab="$OPTARG" ;;
+		:) echo "ERROR: option -${OPTARG} requires an argument" >&2; help; return 1 2>/dev/null || exit 1 ;;
+		\?) echo "ERROR: invalid option -${OPTARG}" >&2; help; return 1 2>/dev/null || exit 1 ;;
 	esac
+done
 
-	echo $build $base;
-}
+if [[ -z "$category" || -z "$lab" ]]; then
+	echo "ERROR: no options were passed" >&2
+	help
+	return 1 2>/dev/null || exit 1
+fi
 
-build(){
-	mkdir -p $1;
-}
+export base="${ENGAGEJR_BASE_DIR}/${category}/${lab}"
 
-#Positional Parameters
-flag=$1;
-lab=$2;
-
-
-
-if [[ $OPTIND -eq 1 ]] && [[ -z $flag  ]]; then echo "No options were passed";
-	shift $((OPTIND-1));
-	exit;
+if [[ -d "$base" ]]; then
+	echo "Note: directory already exists: ${base}"
 else
-	#Command line arguments
-	while getopts ":ht:b:ve:w:" option; do
-		case $option in
-		#THM, HTB, Exam or Work
-		t | b | e | w | p) base $flag $lab;; 
-		h) help
-		   exit;;
-		v) version
-		   exit;;
-		\?) echo "Invalid Option";
-			help
-			exit;;
-		esac
+	mkdir -p "$base" || { echo "ERROR: cannot create ${base}" >&2; return 1 2>/dev/null || exit 1; }
+fi
 
-		/bin/clear;
-
-		if [[ $flag = "-w" ]]; 
-		then
-			build $base/nmap
-			build $base/burp			
-			build $base/nessus
-			build $base/other
-
-			##Source burp script and create file
-			source burper $base $lab &
-		fi
-		if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; 
-		then
-			echo $base;
-			cd $base;
-			$SHELL;
-		fi
+if [[ "$category" == "${ENGAGEJR_WORK_SUBDIR}" ]]; then
+	for subdir in $ENGAGEJR_SUBDIRS; do
+		mkdir -p "${base}/${subdir}"
 	done
+	"${SCRIPT_DIR}/burper" "$base" "$lab" &
 fi

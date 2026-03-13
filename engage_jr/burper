@@ -1,44 +1,60 @@
 #!/bin/bash
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+[[ -f "${SCRIPT_DIR}/config" ]] || { echo "ERROR: config not found at ${SCRIPT_DIR}/config" >&2; exit 1; }
+source "${SCRIPT_DIR}/config"
+
 help() {
-	echo $'burper <options> or burper [directory name] [filename]';
+	echo "burper [directory] [job_name]"
+	echo "  -h  this page"
+	echo "  -v  version"
 }
 
 version() {
-	echo $'version 1\nBuilt by Daniel Roberts';
+	echo "version 2"
+	echo "Built by Daniel Roberts"
 }
 
-
-##Function to create the burp file and delete any temporary files it leaves behind.
 create_file() {
+	local location="$1"
+	local job="$2"
 
-	location=$1
-	job=$2
+	if [[ ! -f "${ENGAGEJR_BURP_JAR}" ]]; then
+		echo "ERROR: Burp jar not found: ${ENGAGEJR_BURP_JAR}" >&2
+		exit 1
+	fi
 
-	java -jar -Djava.awt.headless=true /home/danny/BurpSuitePro/burpsuite_pro.jar --project-file=$location/burp/$job.burp & sleep 60s; 
-	pkill -f burpsuite_pro.jar;
+	if [[ ! -d "${location}/burp" ]]; then
+		echo "ERROR: burp directory not found: ${location}/burp" >&2
+		exit 1
+	fi
 
-	rm -r /tmp/burp*;
+	java -Djava.awt.headless=true -jar "${ENGAGEJR_BURP_JAR}" \
+		--project-file="${location}/burp/${job}.burp" &
+	local burp_pid=$!
+	sleep "${ENGAGEJR_BURP_WAIT}s"
+	kill "$burp_pid" 2>/dev/null
+	wait "$burp_pid" 2>/dev/null
+
+	find /tmp -maxdepth 1 -name 'burp*' -user "$(whoami)" -delete 2>/dev/null
 }
 
-
-if [[ $OPTIND -eq 1 ]] && [[ -z $1  ]]; then echo "No options were passed";
-	shift $((OPTIND-1));
-	exit;
-
-elif [[ "$1" != "-h" ]] && [[ "$1" != "-v" ]]; then
-		create_file $1 $2;
-else
-	#Command line arguments
-	while getopts ":hv" option; do
-		case $option in
-		h) help
-		   exit;;
-		v) version
-		   exit;;
-		\?) echo "Invalid Option";
-			help
-			exit;;
-		esac
-	done
+if [[ -z "$1" ]]; then
+	echo "No options were passed"
+	help
+	exit 1
 fi
+
+case "$1" in
+	-h) help; exit 0 ;;
+	-v) version; exit 0 ;;
+	*)
+		if [[ -z "$2" ]]; then
+			echo "ERROR: usage: burper <directory> <job_name>" >&2
+			help
+			exit 1
+		fi
+		create_file "$1" "$2"
+		;;
+esac
