@@ -34,8 +34,15 @@
 						setFrameStatus("framed");
 					}
 				} catch(e) {
-					// SecurityError: cross-origin page loaded successfully in iframe
-					setFrameStatus("framed");
+					// Two SecurityError cases to distinguish:
+					// 1. Firefox X-Frame-Options block: the frame gets about:neterror which
+					//    is chrome-privileged, so the access throws "The operation is insecure."
+					// 2. Genuine cross-origin page load: throws a permission-denied error.
+					if (e && e.message && e.message.indexOf("insecure") !== -1) {
+						setFrameStatus("blocked");
+					} else {
+						setFrameStatus("framed");
+					}
 				}
 			});
 		}
