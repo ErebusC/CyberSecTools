@@ -1,48 +1,72 @@
 #!/bin/bash
 
-file=$1;
-new_loc=$(pwd);
+file="$1"
+new_loc="${2:-$(pwd)}"
 
-#Removes the HTTP structure in a hostname
+if [[ -z "$file" ]]; then
+	echo "ERROR: no host file provided" >&2
+	echo "usage: clean_hosts <hosts_file> [output_dir]" >&2
+	exit 1
+fi
+
+if [[ ! -f "$file" ]]; then
+	echo "ERROR: file not found: $file" >&2
+	exit 1
+fi
+
+# Truncate output files at the start so re-runs don't accumulate stale data
+: > "${new_loc}/hosts"
+: > "${new_loc}/nohttp_hosts"
+: > "${new_loc}/http_hosts"
+
+# Strips HTTP/HTTPS scheme and any trailing path, writes to hosts and nohttp_hosts
 remove_http() {
- 	sed -E -e 's/(https:\/\/|http:\/\/|)//g' -e 's/\/.*//g' <<< $1 | tee -a $new_loc/hosts $new_loc/nohttp_hosts > /dev/null;
+	local stripped
+	stripped=$(sed -E -e 's|https?://||' -e 's|/.*||' <<< "$1")
+	echo "$stripped" >> "${new_loc}/hosts"
+	echo "$stripped" >> "${new_loc}/nohttp_hosts"
 }
 
-#Expands IP address ranges
 expand_range() {
-		#If host is an IP range matches this pattern 10.10.10.1-10:
-		if [[ $1 =~ ^([0-9]{1,3}+(\.|)){4}+\-[0-9]{1,3}$ ]]; then
+	local host="$1"
 
-			#Take each line, obtain the digits indicating the range such as 1-10
-			input=$(echo "$1" |  grep -o '[0-9]\{1,3\}\b' | grep -Eo '.{1,3}' | tail -2);
+	# IP range: 10.10.10.1-5
+	if [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}-[0-9]{1,3}$ ]]; then
+		local base_ip range_start range_end
+		base_ip=$(echo "$host" | grep -Eo '^([0-9]{1,3}\.){3}' | sed 's/\.$//')
+		range_start=$(echo "$host" | grep -Eo '[0-9]+-' | tr -d '-')
+		range_end=$(echo "$host" | grep -Eo '-[0-9]+$' | tr -d '-')
+		for i in $(seq "$range_start" "$range_end"); do
+			echo "${base_ip}.${i}" >> "${new_loc}/hosts"
+		done
 
-			#Obtain the first three octets of the range, to glue back together later
-			head=$(echo "$1" | sed -e 's/\.[^.]*$//');
-			
-			#for every number in the sequence, glue the original three octets to the new IPs and put them in a new file
-			for i in $(seq $input); do
-				echo "$head.$i" >> $new_loc/hosts;
-			done
-		#If the range is CIDR notation
-		elif [[ $1 =~ ^([0-9]{1,3}+(\.|)){4}+\/[0-9]{1,2}$ ]]; then
-			nmap -sL -n $1 | grep -o '([0-9]{1,3}+(\.|)){4}' >> $new_loc/hosts;
+	# CIDR notation: 10.10.10.0/24
+	elif [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+		nmap -sL -n "$host" 2>/dev/null | grep 'Nmap scan report' | awk '{print $NF}' >> "${new_loc}/hosts"
 
-		#If a host within the file doesn't need exanding
-		elif [[ $1 =~ ^([0-9]{1,3}+(\.|$)){4} ]]; then
-			echo $1 >> $new_loc/hosts;
-		else
-			echo "fail: $1";
-		fi
+	# Single IP
+	elif [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+		echo "$host" >> "${new_loc}/hosts"
+
+	else
+		echo "WARNING: unrecognised host format: $host" >&2
+	fi
 }
 
-while read host; do
-	if [[ $host =~ ([0-9]{1,3}+(\.|)){4} ]]; then
-		expand_range $host;	
-	elif [[ $host =~ http ]]; then
-		echo $host | tee -a $new_loc/http_hosts > /dev/null;
-		remove_http $host;
-	else
+while read -r host; do
+	[[ -z "$host" ]] && continue
 
-		echo $host >> $new_loc/hosts;
+	if [[ "$host" =~ ^([0-9]{1,3}\.){3} ]]; then
+		expand_range "$host"
+	elif [[ "$host" =~ ^https?:// ]]; then
+		echo "$host" >> "${new_loc}/http_hosts"
+		remove_http "$host"
+	else
+		echo "$host" >> "${new_loc}/hosts"
 	fi
-done < $file
+done < "$file"
+
+# Sort and deduplicate all output files in place
+for f in hosts nohttp_hosts http_hosts; do
+	[[ -s "${new_loc}/${f}" ]] && sort -u "${new_loc}/${f}" -o "${new_loc}/${f}"
+done

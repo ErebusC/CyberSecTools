@@ -1,0 +1,12 @@
+# engage_jr configuration
+# Edit these values to match your environment before first use.
+
+ENGAGEJR_BASE_DIR=/Share
+ENGAGEJR_BURP_JAR=~/BurpSuitePro/burpsuite_pro.jar
+ENGAGEJR_BURP_WAIT=60
+ENGAGEJR_SUBDIRS="nmap burp nessus other"
+ENGAGEJR_WORK_SUBDIR=work
+ENGAGEJR_THM_SUBDIR=THM
+ENGAGEJR_HTB_SUBDIR=HTB
+ENGAGEJR_EXAM_SUBDIR=exam
+ENGAGEJR_PS_SUBDIR=portswigger
