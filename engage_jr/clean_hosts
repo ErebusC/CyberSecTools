@@ -14,6 +14,8 @@ if [[ ! -f "$file" ]]; then
 	exit 1
 fi
 
+mkdir -p "$new_loc"
+
 # Truncate output files at the start so re-runs don't accumulate stale data
 : > "${new_loc}/hosts"
 : > "${new_loc}/nohttp_hosts"
@@ -32,10 +34,11 @@ expand_range() {
 
 	# IP range: 10.10.10.1-5
 	if [[ "$host" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}-[0-9]{1,3}$ ]]; then
-		local base_ip range_start range_end
-		base_ip=$(echo "$host" | grep -Eo '^([0-9]{1,3}\.){3}' | sed 's/\.$//')
-		range_start=$(echo "$host" | grep -Eo '[0-9]+-' | tr -d '-')
-		range_end=$(echo "$host" | grep -Eo '-[0-9]+$' | tr -d '-')
+		local base_ip range_part range_start range_end
+		base_ip="${host%.*}"          # e.g. 10.10.10
+		range_part="${host##*.}"      # e.g. 2-5
+		range_start="${range_part%-*}" # e.g. 2
+		range_end="${range_part#*-}"   # e.g. 5
 		for i in $(seq "$range_start" "$range_end"); do
 			echo "${base_ip}.${i}" >> "${new_loc}/hosts"
 		done
