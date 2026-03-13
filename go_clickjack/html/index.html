@@ -10,47 +10,10 @@
 		var elIframe, elWebInput, elCollabInput, elHistory;
 		var HISTORY_LIMIT = 20;
 
-		function setFrameStatus(state) {
-			var badge = document.getElementById("frame-status");
-			badge.className = "status-badge " + state;
-			badge.textContent = state === "framed" ? "Framed" : state === "blocked" ? "Blocked" : "Loading...";
-		}
-
-		function attachFrameListener() {
-			elIframe.addEventListener("load", function() {
-				try {
-					var href = elIframe.contentWindow.location.href;
-					// Readable href means either a same-origin page or a browser
-					// error/blocked page. Any about: URL (including Firefox's
-					// about:neterror) and Chrome's chrome-error: scheme both
-					// indicate the frame was denied.
-					if (!href ||
-						href === "about:blank" ||
-						href.startsWith("about:") ||
-						href.startsWith("chrome-error:") ||
-						href.startsWith("chrome://")) {
-						setFrameStatus("blocked");
-					} else {
-						setFrameStatus("framed");
-					}
-				} catch(e) {
-					// Two SecurityError cases to distinguish:
-					// 1. Firefox X-Frame-Options block: the frame gets about:neterror which
-					//    is chrome-privileged, so the access throws "The operation is insecure."
-					// 2. Genuine cross-origin page load: throws a permission-denied error.
-					if (e && e.message && e.message.indexOf("insecure") !== -1) {
-						setFrameStatus("blocked");
-					} else {
-						setFrameStatus("framed");
-					}
-				}
-			});
-		}
 
 		function loadWebsite() {
 			var url = elWebInput.value.trim();
 			if (!url) return;
-			setFrameStatus("loading");
 			elIframe.src = url;
 			addToHistory(url);
 		}
@@ -79,7 +42,6 @@
 			btn.onclick = (function(u) {
 				return function() {
 					elWebInput.value = u;
-					setFrameStatus("loading");
 					elIframe.src = u;
 				};
 			})(url);
@@ -140,8 +102,6 @@
 			elCollabInput = document.getElementsByName("collabInput")[0];
 			elHistory     = document.getElementById("url-history");
 
-			attachFrameListener();
-
 			if (elIframe.src && elIframe.src !== "about:blank" && elIframe.src !== window.location.href) {
 				addToHistory(elIframe.src);
 			}
@@ -164,7 +124,6 @@
 				<span class="control-label">Web page to clickjack:</span>
 				<input name="webInput" value="{{.Site}}">
 				<button onclick="loadWebsite()">Submit</button>
-				<span id="frame-status" class="status-badge"></span>
 			</div>
 			<div class="control-row">
 				<span class="control-label">Collaborator address:</span>
