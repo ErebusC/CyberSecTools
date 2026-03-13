@@ -1,10 +1,10 @@
-body{
-	padding:0px;
-	margin:0px;
+body {
+	padding: 0px;
+	margin: 0px;
 	background-color: #425563;
 	color: white;
 	overflow: hidden;
-	font-family: 'Muli', Arial, Helvetica, san-serif;
+	font-family: 'Muli', Arial, Helvetica, sans-serif;
 }
 
 nav {
@@ -15,57 +15,181 @@ nav {
 	font-size: 2em;
 	font-family: 'Open Sans';
 	-webkit-text-stroke-width: 0.2px;
-  	-webkit-text-stroke-color: #2f3640;
+	-webkit-text-stroke-color: #2f3640;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4em;
 }
 
-nav img{
-	width:6.1em;
-	vertical-align: text-bottom;
+#nav-logo {
+	height: 1.4em;
+	width: auto;
+	vertical-align: middle;
+	object-fit: contain;
 }
 
 #wrapper {
-  width: 90vw;
-  height: 90vh;
-  position: relative;
-  margin: 0 auto;
-  box-sizing: border-box;
-  overflow: hidden;
+	width: 100vw;
+	height: calc(100vh - 60px);
+	position: relative;
+	box-sizing: border-box;
+	overflow: hidden;
 }
 
-#wrapper div {
-  font-size: 1.5em;
-  padding-top: 1%;      /* Reduced padding */
-  position: absolute;
-  left: 25%;
-  width: 50%;
-  box-sizing: border-box;
+/*
+ * Controls and iframe share the same left/width so inputs
+ * visually span exactly the iframe column.
+ * Layout: 1% left gap | 73% iframe+controls | 2% gap | 24% history
+ */
+#controls {
+	position: absolute;
+	left: 1%;
+	top: 0;
+	width: 73%;
+	box-sizing: border-box;
+	padding: 0.5% 0;
+	font-size: 1.1em;
+
+	/* Grid: label | input (flex) | primary btn | secondary btn/badge */
+	display: grid;
+	grid-template-columns: max-content 1fr auto auto;
+	align-items: center;
+	gap: 0.35em 0.6em;
 }
 
-#wrapper div input {
-  width: 60%;
-  font-size: 1.2em;
-  margin-right: 1em;
-  box-sizing: border-box;
+/* Make control-row divs transparent to the grid */
+.control-row {
+	display: contents;
 }
 
-#wrapper div button {
-  font-size: 1em;
-  padding: 0.3em 0.8em;
-  box-sizing: border-box;
-  white-space: nowrap;
-  cursor: pointer; 
-  width: 150px;
+.control-label {
+	white-space: nowrap;
+}
+
+#controls input {
+	min-width: 0;
+	font-size: 0.9em;
+	padding: 0.28em 0.4em;
+	box-sizing: border-box;
+	width: 100%;
+}
+
+#controls button {
+	flex-shrink: 0;
+	font-size: 0.85em;
+	padding: 0.3em 0.8em;
+	cursor: pointer;
+	white-space: nowrap;
+	min-width: 100px;
+}
+
+/* Frame status badge */
+.status-badge {
+	font-size: 0.8em;
+	font-weight: bold;
+	padding: 0.2em 0.7em;
+	border-radius: 3px;
+	min-width: 75px;
+	text-align: center;
+	visibility: hidden;
+	white-space: nowrap;
+}
+
+.status-badge.framed {
+	visibility: visible;
+	background-color: #2ecc71;
+	color: #1a1a1a;
+}
+
+.status-badge.blocked {
+	visibility: visible;
+	background-color: #e74c3c;
+	color: white;
+}
+
+.status-badge.loading {
+	visibility: visible;
+	background-color: #95a5a6;
+	color: white;
+}
+
+#overlay-reset {
+	background-color: #c0392b;
+	color: white;
+	border: none;
+}
+
+#overlay-reset:hover {
+	background-color: #e74c3c;
+}
+
+#history-panel {
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 24%;
+	height: 100%;
+	background-color: #344450;
+	box-sizing: border-box;
+	padding: 0.5em;
+	overflow-y: auto;
+}
+
+#history-title {
+	font-size: 1em;
+	font-weight: bold;
+	border-bottom: 1px solid #5a7080;
+	padding-bottom: 0.4em;
+	margin-bottom: 0.5em;
+}
+
+#url-history {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+#url-history li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.4em;
+	padding: 0.35em 0;
+	border-bottom: 1px solid #4a6070;
+	font-size: 0.75em;
+	overflow: hidden;
+}
+
+#url-history .url-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex: 1;
+	color: #c8d8e0;
+}
+
+#url-history .url-load {
+	flex-shrink: 0;
+	font-size: 0.85em;
+	padding: 0.2em 0.5em;
+	cursor: pointer;
+	background: #425563;
+	color: white;
+	border: 1px solid #5a7080;
+	border-radius: 3px;
+}
+
+#url-history .url-load:hover {
+	background: #536575;
 }
 
 #wrapper iframe {
-  position: absolute;
-  top: 15%;           
-  left: 25%;
-  width: 50%;
-  height: 85%;
-  border: 4px solid black;
-  box-sizing: border-box;
+	position: absolute;
+	top: 13%;
+	left: 1%;
+	width: 73%;
+	height: 87%;
+	border: 4px solid black;
+	box-sizing: border-box;
 }
-
-
-

