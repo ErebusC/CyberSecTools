@@ -1,3 +1,5 @@
+This is completely vibe coded as I was working on an engagement where I saw a real benefit for this over Turbo Intruder, but did not have the time to completely create it myself.
+
 # Complete Feature Summary 🚀
 
 All scripts now have powerful new features!
