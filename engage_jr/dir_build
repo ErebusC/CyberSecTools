@@ -22,8 +22,8 @@ version() {
 	echo "Built by Daniel Roberts"
 }
 
-local category=""
-local lab=""
+category=""
+lab=""
 
 while getopts ":hvt:b:e:p:w:" option; do
 	case $option in
@@ -54,7 +54,7 @@ else
 fi
 
 if [[ "$category" == "${ENGAGEJR_WORK_SUBDIR}" ]]; then
-	for subdir in $ENGAGEJR_SUBDIRS; do
+	for subdir in "${ENGAGEJR_SUBDIRS[@]}"; do
 		mkdir -p "${base}/${subdir}"
 	done
 	"${SCRIPT_DIR}/burper" "$base" "$lab" &
