@@ -53,4 +53,3 @@ go build -o clickjack .
 
 - The tool sets `X-Frame-Options: Deny` on its own responses so the tool cannot be framed by another page
 - The frame status indicator uses a cross-origin heuristic; a SecurityError on iframe access means the page loaded successfully, which is reported as Framed
-- CIDR and IP range expansion requires `nmap` to be installed
