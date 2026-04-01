@@ -1,65 +1,97 @@
-# Engage Jr
+# engage_jr
 
-A set of shell scripts for spinning up a new engagement workspace. Run one command with a job name and a hosts file and it builds a directory structure, normalises the host list into multiple formats, creates a Burp project file, and drops you into a shell at the engagement root ready to start testing.
+Sets up directories, host files, and a Burp project so I can start a pentest without faffing around with folder structures every time.
 
-Built by Daniel Roberts. Enhanced with AI assistance to improve functionality.
+Point it at a host file and it will create the engagement directory, split hosts into separate files by type, expand any CIDR/ranges, deduplicate everything, kick off a headless Burp project in the background, and drop you into a shell at the engagement directory.
 
-## Scripts
+## Build
 
-| Script | Description |
-|---|---|
-| `engage_jr` | Entry point. Run this to start a new engagement |
-| `dir_build` | Builds the directory structure for a given engagement type |
-| `clean_hosts` | Normalises a hosts file into multiple formats |
-| `burper` | Creates a Burp Suite project file for the engagement |
-
-## Setup
-
-Clone the repo and edit `config` to match your environment before first use:
-
-```
-ENGAGEJR_BASE_DIR=/Share
-ENGAGEJR_BURP_JAR=~/BurpSuitePro/burpsuite_pro.jar
-ENGAGEJR_BURP_WAIT=60
+```bash
+make build
+make install   # copies to /usr/local/bin
 ```
 
-The config file lives alongside the scripts so the tool is portable across machines — clone and edit, no install step needed.
+Requires Go 1.22+. Burp Suite Pro and `java` on PATH for project file creation (skipped gracefully if missing).
 
 ## Usage
 
-**Start a new engagement:**
 ```
-engage_jr <job_name> <hosts_file>
-```
-
-Creates the engagement directory under `$ENGAGEJR_BASE_DIR/work/`, processes the hosts file, creates a Burp project, and drops into a shell at the engagement root.
-
-**List existing engagements:**
-```
-engage_jr -l [category]
+engage_jr [mode] [options] <name> [hostfile]
 ```
 
-**Build a directory for other lab types directly:**
+### Modes
+
+| Flag | Directory | Purpose |
+|------|-----------|---------|
+| `-w` | `~/Share/work/<name>` | Work engagement (default) |
+| `-t` | `~/Share/THM/<name>` | TryHackMe |
+| `-b` | `~/Share/HTB/<name>` | HackTheBox |
+| `-e` | `~/Share/exam/<name>` | Exam |
+| `-p` | `~/Share/swigger/<name>` | PortSwigger |
+
+Work mode creates tool subdirectories (`nmap/`, `burp/`, `nessus/`, `other/` by default) and processes the host file. Other modes just create the engagement directory.
+
+### Examples
+
+```bash
+engage_jr ClientName hosts.txt          # work engagement with host file
+engage_jr -t Relevant                   # TryHackMe lab
+engage_jr -list                         # show all engagements
+engage_jr -list -t                      # show only THM engagements
+engage_jr -open -t Relevant             # resume an existing engagement
+engage_jr -dry-run ClientName hosts.txt # preview, don't create anything
 ```
-source dir_build -w <name>    # work engagement
-source dir_build -t <name>    # TryHackMe
-source dir_build -b <name>    # HackTheBox
-source dir_build -e <name>    # exam
-source dir_build -p <name>    # PortSwigger
+
+### Host file
+
+One entry per line. Comments with `#`. Supports:
+
+```
+app.target.com                  # hostname
+10.10.10.50                     # IP
+10.10.10.1-20                   # range (expanded)
+192.168.1.0/24                  # CIDR (expanded, no nmap needed)
+https://admin.target.com/login  # URL
 ```
 
-## Host Files
+Produces three output files in the engagement directory:
+- `hosts` — every unique host, one per line
+- `http_hosts` — original URLs preserved
+- `nohttp_hosts` — URLs stripped to bare hostnames
 
-`clean_hosts` produces three output files from your input hosts list:
+Duplicates across ranges, CIDRs, and repeated entries are removed.
 
-| File | Contents | Use case |
-|---|---|---|
-| `hosts` | All IPs and bare hostnames | Tools that do not accept `http://` |
-| `nohttp_hosts` | Stripped hostnames from HTTP targets only | Hostname-only tool input |
-| `http_hosts` | Original URLs with scheme | Tools that require `https://` |
+### All flags
 
-Input supports single IPs, ranges (`10.10.10.1-5`), CIDR notation (`10.10.10.0/24`), and `http://` / `https://` URLs. Output is sorted and deduplicated.
+```
+-list              List engagements (combine with a mode flag to filter)
+-open <name>       Resume an existing engagement
+-burp-jar <path>   Override Burp jar location
+-base-dir <path>   Override base directory
+-config   <path>   Override config file path
+-dry-run           Show what would happen without touching the filesystem
+-verbose           Debug output
+-v                 Version
+```
 
-## Example
+## Config
 
-![ Alt text](Peek-2024-01-19-10-11.gif)
+Config is loaded in layers — CLI flags beat env vars, env vars beat the config file, config file beats defaults.
+
+File: `~/.config/engage_jr/config.json`
+
+```json
+{
+  "burp_jar":          "/path/to/burpsuite_pro.jar",
+  "base_dir":          "/home/user/Share",
+  "burp_timeout_secs": 90,
+  "work_dirs":         ["nmap", "burp", "nessus", "gobuster", "screenshots"]
+}
+```
+
+| Setting | Env var | Default |
+|---------|---------|---------|
+| Burp jar path | `ENGAGE_BURP_JAR` | `~/BurpSuitePro/burpsuite_pro.jar` |
+| Base directory | `ENGAGE_BASE_DIR` | `~/Share` |
+| Burp timeout | `ENGAGE_BURP_TIMEOUT` | `60s` |
+| Work subdirs | -- | `nmap, burp, nessus, other` |
