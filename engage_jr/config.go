@@ -37,7 +37,7 @@ func loadConfig(configPath, cliBurpJar, cliBaseDir string) (*Config, error) {
 
 	cfg := &Config{
 		BurpJar:         filepath.Join(home, "BurpSuitePro", "burpsuite_pro.jar"),
-		BaseDir:         filepath.Join(home, "Share"),
+		BaseDir:         filepath.Join("/", "Share"),
 		BurpTimeoutSecs: defaultBurpTimeoutSecs,
 		WorkDirs:        defaultWorkDirs,
 	}
