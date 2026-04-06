@@ -30,6 +30,7 @@ func main() {
 	dryRunFlag  := flag.Bool("dry-run", false, "Show what would be created without making changes")
 	listFlag    := flag.Bool("list", false, "List existing engagements and exit")
 	openFlag    := flag.String("open", "", "Resume an existing engagement by name")
+	finishFlag := flag.String("finish", "", "Archive and GPG-sign an engagement by name")
 
 	flag.Usage = usage
 	flag.Parse()
@@ -61,6 +62,11 @@ func main() {
 	if *openFlag != "" {
 		openEngagement(cfg, mode, *openFlag)
 		return
+	}
+
+	if *finishFlag != "" {
+    		finishEngagement(cfg, mode, *finishFlag)
+   	 	return
 	}
 
 	args := flag.Args()
@@ -181,6 +187,7 @@ Modes (default: -w):
 Options:
   -list              List all existing engagements and exit (combine with mode to filter)
   -open <name>       Resume an existing engagement by name
+  -finish <name>     Archive and GPG-sign an existing engagement
   -burp-jar <path>   Path to Burp Suite jar
   -base-dir <path>   Base directory (default: ~/Share)
   -config   <path>   Config JSON file (default: ~/.config/engage_jr/config.json)
