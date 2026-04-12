@@ -22,21 +22,32 @@ func resolveEngagementDir(cfg *Config, mode engagementMode, name string) (string
 	return dir, nil
 }
 
-// openEngagement resumes an existing engagement by changing to its directory
-// and launching an interactive shell. The mode flag determines which
-// subdirectory to search in under cfg.BaseDir.
-func openEngagement(cfg *Config, mode engagementMode, name string) {
+// openEngagement resumes an existing engagement by attaching to its tmux session
+// (when tmux is enabled) or launching an interactive shell. sshHost optionally
+// overrides ENGAGE_SSH_HOST in an existing session.
+func openEngagement(cfg *Config, mode engagementMode, name, sshHost string) {
 	dir, err := resolveEngagementDir(cfg, mode, name)
 	if err != nil {
 		fatal("%v", err)
 	}
 	logInfo("resuming: %s", dir)
-	launchShell(dir)
+	launchShell(cfg, mode, name, dir, sshHost)
 }
 
-// launchShell changes to dir and runs the user's interactive shell.
-// Used by both new engagements and -open.
-func launchShell(dir string) {
+// launchShell is the single entry point for starting a shell or tmux session
+// after an engagement directory is ready. When tmux is enabled it delegates to
+// launchTmux; otherwise it falls back to launchPlainShell.
+func launchShell(cfg *Config, mode engagementMode, name, dir, sshHost string) {
+	if cfg.TmuxEnabled {
+		launchTmux(cfg, mode, name, dir, sshHost)
+		return
+	}
+	launchPlainShell(dir)
+}
+
+// launchPlainShell changes to dir and runs the user's interactive shell.
+// Used as a fallback when tmux is disabled or unavailable.
+func launchPlainShell(dir string) {
 	if err := os.Chdir(dir); err != nil {
 		fatal("changing to engagement directory: %v", err)
 	}

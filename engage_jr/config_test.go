@@ -7,10 +7,18 @@ import (
 	"testing"
 )
 
+func unsetTmuxEnvs(t *testing.T) {
+	t.Helper()
+	for _, e := range []string{envTmux, envTmuxSessionPrefix, envObsidianBin, envObsidianVault} {
+		os.Unsetenv(e)
+	}
+}
+
 func TestLoadConfigDefaults(t *testing.T) {
 	os.Unsetenv(envBurpJar)
 	os.Unsetenv(envBaseDir)
 	os.Unsetenv(envBurpTimeout)
+	unsetTmuxEnvs(t)
 
 	cfg, err := loadConfig("/nonexistent/config.json", "", "")
 	if err != nil {
@@ -28,6 +36,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 }
 
 func TestLoadConfigEnvVars(t *testing.T) {
+	unsetTmuxEnvs(t)
 	os.Setenv(envBurpJar, "/env/burp.jar")
 	os.Setenv(envBaseDir, "/env/base")
 	os.Setenv(envBurpTimeout, "120")
@@ -51,6 +60,7 @@ func TestLoadConfigEnvVars(t *testing.T) {
 }
 
 func TestLoadConfigInvalidBurpTimeout(t *testing.T) {
+	unsetTmuxEnvs(t)
 	os.Unsetenv(envBurpJar)
 	os.Unsetenv(envBaseDir)
 	os.Setenv(envBurpTimeout, "notanumber")
@@ -67,6 +77,7 @@ func TestLoadConfigInvalidBurpTimeout(t *testing.T) {
 }
 
 func TestLoadConfigCLIOverridesEnv(t *testing.T) {
+	unsetTmuxEnvs(t)
 	os.Setenv(envBurpJar, "/env/burp.jar")
 	os.Setenv(envBaseDir, "/env/base")
 	defer os.Unsetenv(envBurpJar)
@@ -85,6 +96,7 @@ func TestLoadConfigCLIOverridesEnv(t *testing.T) {
 }
 
 func TestLoadConfigFile(t *testing.T) {
+	unsetTmuxEnvs(t)
 	os.Unsetenv(envBurpJar)
 	os.Unsetenv(envBaseDir)
 	os.Unsetenv(envBurpTimeout)
@@ -116,6 +128,7 @@ func TestLoadConfigFile(t *testing.T) {
 }
 
 func TestLoadConfigFilePrecedenceBelowEnv(t *testing.T) {
+	unsetTmuxEnvs(t)
 	os.Setenv(envBurpJar, "/env/burp.jar")
 	defer os.Unsetenv(envBurpJar)
 
@@ -142,5 +155,146 @@ func TestLoadConfigInvalidJSON(t *testing.T) {
 	_, err := loadConfig(cfgPath, "", "")
 	if err == nil {
 		t.Error("expected error for invalid JSON, got nil")
+	}
+}
+
+func TestLoadConfigTmuxDisabledByDefault(t *testing.T) {
+	unsetTmuxEnvs(t)
+
+	cfg, err := loadConfig("/nonexistent/config.json", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.TmuxEnabled {
+		t.Error("TmuxEnabled should be false by default")
+	}
+	if cfg.TmuxPrefix != "" {
+		t.Errorf("TmuxPrefix = %q, want empty (no prefix by default)", cfg.TmuxPrefix)
+	}
+}
+
+func TestLoadConfigTmuxEnvVar(t *testing.T) {
+	unsetTmuxEnvs(t)
+	for _, val := range []string{"1", "true", "TRUE", "True"} {
+		t.Run(val, func(t *testing.T) {
+			os.Setenv(envTmux, val)
+			defer os.Unsetenv(envTmux)
+
+			cfg, err := loadConfig("/nonexistent/config.json", "", "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !cfg.TmuxEnabled {
+				t.Errorf("TmuxEnabled = false for ENGAGE_TMUX=%q, want true", val)
+			}
+		})
+	}
+}
+
+func TestLoadConfigTmuxPrefixEnvVar(t *testing.T) {
+	unsetTmuxEnvs(t)
+	os.Setenv(envTmuxSessionPrefix, "pentest")
+	defer os.Unsetenv(envTmuxSessionPrefix)
+
+	cfg, err := loadConfig("/nonexistent/config.json", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.TmuxPrefix != "pentest" {
+		t.Errorf("TmuxPrefix = %q, want pentest", cfg.TmuxPrefix)
+	}
+}
+
+func TestLoadConfigObsidianDefaults(t *testing.T) {
+	unsetTmuxEnvs(t)
+
+	cfg, err := loadConfig("/nonexistent/config.json", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ObsidianBin != "obsidian" {
+		t.Errorf("ObsidianBin = %q, want obsidian", cfg.ObsidianBin)
+	}
+	if cfg.ObsidianSyncedVault != defaultObsidianVault {
+		t.Errorf("ObsidianSyncedVault = %q, want %q", cfg.ObsidianSyncedVault, defaultObsidianVault)
+	}
+}
+
+func TestLoadConfigObsidianEnvVars(t *testing.T) {
+	unsetTmuxEnvs(t)
+	os.Setenv(envObsidianBin, "/opt/Obsidian.AppImage")
+	os.Setenv(envObsidianVault, "/home/user/SyncedNotes")
+	defer os.Unsetenv(envObsidianBin)
+	defer os.Unsetenv(envObsidianVault)
+
+	cfg, err := loadConfig("/nonexistent/config.json", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ObsidianBin != "/opt/Obsidian.AppImage" {
+		t.Errorf("ObsidianBin = %q, want /opt/Obsidian.AppImage", cfg.ObsidianBin)
+	}
+	if cfg.ObsidianSyncedVault != "/home/user/SyncedNotes" {
+		t.Errorf("ObsidianSyncedVault = %q, want /home/user/SyncedNotes", cfg.ObsidianSyncedVault)
+	}
+}
+
+func TestLoadConfigSSHHostsFromFile(t *testing.T) {
+	unsetTmuxEnvs(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data, _ := json.Marshal(map[string]interface{}{
+		"ssh_hosts": map[string]string{"work": "lhack", "HTB": "htb-vps"},
+	})
+	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgPath, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SSHHosts["work"] != "lhack" {
+		t.Errorf("SSHHosts[work] = %q, want lhack", cfg.SSHHosts["work"])
+	}
+	if cfg.SSHHosts["HTB"] != "htb-vps" {
+		t.Errorf("SSHHosts[HTB] = %q, want htb-vps", cfg.SSHHosts["HTB"])
+	}
+}
+
+func TestLoadConfigTmuxLayoutFromFile(t *testing.T) {
+	unsetTmuxEnvs(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	data, _ := json.Marshal(map[string]interface{}{
+		"tmux_layouts": map[string]interface{}{
+			"work": []map[string]interface{}{
+				{"name": "shell", "focus_pane": 0,
+					"panes": []map[string]interface{}{
+						{},
+						{"split_direction": "v", "percent": 40},
+					}},
+			},
+		},
+	})
+	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgPath, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	layout := cfg.TmuxLayouts["work"]
+	if len(layout) != 1 {
+		t.Fatalf("TmuxLayouts[work] has %d windows, want 1", len(layout))
+	}
+	if layout[0].Name != "shell" {
+		t.Errorf("TmuxLayouts[work][0].Name = %q, want shell", layout[0].Name)
+	}
+	if len(layout[0].Panes) != 2 {
+		t.Errorf("TmuxLayouts[work][0] has %d panes, want 2", len(layout[0].Panes))
 	}
 }

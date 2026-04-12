@@ -82,6 +82,15 @@ func buildDir(cfg *Config, mode engagementMode, name string) (string, error) {
 				return "", fmt.Errorf("failed to create subdirectory %s: %w", path, err)
 			}
 		}
+
+		// Create the notes directory with an Obsidian vault skeleton so the vault
+		// is valid from the first open. The .obsidian directory is what Obsidian
+		// uses to identify and configure the vault.
+		obsidianDir := filepath.Join(base, "notes", ".obsidian")
+		if err := os.MkdirAll(obsidianDir, 0755); err != nil {
+			logWarn("could not create notes vault skeleton: %v", err)
+		}
+
 		go createBurpProject(cfg, base, name)
 	}
 

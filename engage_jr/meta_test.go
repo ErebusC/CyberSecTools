@@ -61,36 +61,121 @@ func TestWriteMetaIdempotent(t *testing.T) {
 	}
 }
 
-func TestUpdateMetaHostCount(t *testing.T) {
+func TestUpdateMetaContext(t *testing.T) {
 	dir := t.TempDir()
-	meta := EngagementMeta{
-		Name:      "TestClient",
+
+	// Seed the metadata file.
+	if err := writeMeta(dir, EngagementMeta{
+		Name:      "acmecorp_1",
 		Mode:      "work",
 		CreatedAt: time.Now().Truncate(time.Second),
-	}
-	if err := writeMeta(dir, meta); err != nil {
+	}); err != nil {
 		t.Fatalf("writeMeta failed: %v", err)
 	}
 
-	if err := updateMetaHostCount(dir, 42); err != nil {
-		t.Fatalf("updateMetaHostCount failed: %v", err)
+	// Write host files as processHostFile would.
+	os.WriteFile(filepath.Join(dir, "hosts"), []byte("10.0.0.1\n10.0.0.2\n"), 0644)
+	os.WriteFile(filepath.Join(dir, "http_hosts"), []byte("http://example.com\n"), 0644)
+
+	cfg := &Config{TmuxEnabled: true, TmuxPrefix: ""}
+	stats := hostStats{Unique: 2, HTTP: 1}
+	envVars := []string{"ENGAGE_NAME=acmecorp_1", "TARGET_1=10.0.0.1", "TARGET_2=10.0.0.2"}
+
+	if err := updateMetaContext(dir, cfg, ModeWork, "acmecorp_1", stats, "lhack", envVars); err != nil {
+		t.Fatalf("updateMetaContext failed: %v", err)
 	}
 
 	got, err := readMeta(filepath.Join(dir, metaFileName))
 	if err != nil {
 		t.Fatalf("readMeta failed: %v", err)
 	}
-	if got.HostCount != 42 {
-		t.Errorf("HostCount = %d, want 42", got.HostCount)
+
+	// Original fields preserved.
+	if got.Name != "acmecorp_1" {
+		t.Errorf("Name = %q, want acmecorp_1", got.Name)
 	}
-	// Other fields should be preserved.
-	if got.Name != meta.Name {
-		t.Errorf("Name = %q after update, want %q", got.Name, meta.Name)
+	// Host stats.
+	if got.HostCount != 2 {
+		t.Errorf("HostCount = %d, want 2", got.HostCount)
+	}
+	if got.HTTPCount != 1 {
+		t.Errorf("HTTPCount = %d, want 1", got.HTTPCount)
+	}
+	// Structured target lists.
+	if len(got.Targets) != 2 || got.Targets[0] != "10.0.0.1" {
+		t.Errorf("Targets = %v, want [10.0.0.1 10.0.0.2]", got.Targets)
+	}
+	if len(got.HTTPTargets) != 1 || got.HTTPTargets[0] != "http://example.com" {
+		t.Errorf("HTTPTargets = %v, want [http://example.com]", got.HTTPTargets)
+	}
+	// SSH host.
+	if got.SSHHost != "lhack" {
+		t.Errorf("SSHHost = %q, want lhack", got.SSHHost)
+	}
+	// Tmux session (enabled, no prefix → bare name).
+	if got.TmuxSession != "acmecorp_1" {
+		t.Errorf("TmuxSession = %q, want acmecorp_1", got.TmuxSession)
+	}
+	// Env map.
+	if got.Env["ENGAGE_NAME"] != "acmecorp_1" {
+		t.Errorf("Env[ENGAGE_NAME] = %q, want acmecorp_1", got.Env["ENGAGE_NAME"])
+	}
+	if got.Env["TARGET_1"] != "10.0.0.1" {
+		t.Errorf("Env[TARGET_1] = %q, want 10.0.0.1", got.Env["TARGET_1"])
 	}
 }
 
-func TestUpdateMetaHostCountMissingFile(t *testing.T) {
-	err := updateMetaHostCount(t.TempDir(), 10)
+func TestUpdateMetaContextTmuxDisabled(t *testing.T) {
+	dir := t.TempDir()
+	if err := writeMeta(dir, EngagementMeta{
+		Name: "lab1", Mode: "HTB", CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &Config{TmuxEnabled: false}
+	if err := updateMetaContext(dir, cfg, ModeHTB, "lab1", hostStats{}, "", nil); err != nil {
+		t.Fatalf("updateMetaContext failed: %v", err)
+	}
+
+	got, err := readMeta(filepath.Join(dir, metaFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TmuxSession != "" {
+		t.Errorf("TmuxSession = %q, want empty when tmux disabled", got.TmuxSession)
+	}
+}
+
+func TestUpdateMetaContextNoHosts(t *testing.T) {
+	dir := t.TempDir() // no host files written
+	if err := writeMeta(dir, EngagementMeta{
+		Name: "test", Mode: "THM", CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &Config{}
+	if err := updateMetaContext(dir, cfg, ModeTHM, "test", hostStats{}, "", nil); err != nil {
+		t.Fatalf("updateMetaContext failed: %v", err)
+	}
+
+	got, err := readMeta(filepath.Join(dir, metaFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Nil slices are omitted; zero counts are omitted.
+	if len(got.Targets) != 0 {
+		t.Errorf("Targets = %v, want empty when no hosts file", got.Targets)
+	}
+	if got.HostCount != 0 {
+		t.Errorf("HostCount = %d, want 0", got.HostCount)
+	}
+}
+
+func TestUpdateMetaContextMissingFile(t *testing.T) {
+	cfg := &Config{}
+	err := updateMetaContext(t.TempDir(), cfg, ModeWork, "test", hostStats{}, "", nil)
 	if err == nil {
 		t.Error("expected error when metadata file is missing, got nil")
 	}

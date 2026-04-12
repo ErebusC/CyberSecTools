@@ -80,6 +80,19 @@ func finishEngagement(cfg *Config, mode engagementMode, name string) {
 		fatal("%v", err)
 	}
 
+	// Kill the tmux session for this engagement before archiving so no zombie
+	// sessions remain after the directory is encrypted and removed.
+	if cfg.TmuxEnabled {
+		session := tmuxSessionName(cfg, name)
+		if tmuxSessionExists(session) {
+			if err := exec.Command("tmux", "kill-session", "-t", session).Run(); err != nil {
+				logWarn("could not kill tmux session %q: %v", session, err)
+			} else {
+				logInfo("killed tmux session: %s", session)
+			}
+		}
+	}
+
 	reader := bufio.NewReader(os.Stdin)
 
 	pubKeys, err := listGPGKeys(false)

@@ -25,12 +25,13 @@ func main() {
 	cliBurpJar  := flag.String("burp-jar", "", "Path to Burp Suite jar (overrides config/env)")
 	cliBaseDir  := flag.String("base-dir", "", "Base directory override (overrides config/env)")
 	cliConfig   := flag.String("config", "", "Path to config JSON (default: ~/.config/engage_jr/config.json)")
+	cliSSHHost  := flag.String("ssh", "", "SSH config alias for the VPS connection (sets ENGAGE_SSH_HOST)")
 	showVer     := flag.Bool("v", false, "Show version")
 	verboseFlag := flag.Bool("verbose", false, "Print debug information")
 	dryRunFlag  := flag.Bool("dry-run", false, "Show what would be created without making changes")
 	listFlag    := flag.Bool("list", false, "List existing engagements and exit")
 	openFlag    := flag.String("open", "", "Resume an existing engagement by name")
-	finishFlag := flag.String("finish", "", "Archive and GPG-sign an engagement by name")
+	finishFlag  := flag.String("finish", "", "Archive and GPG-sign an engagement by name")
 
 	flag.Usage = usage
 	flag.Parse()
@@ -60,7 +61,7 @@ func main() {
 	}
 
 	if *openFlag != "" {
-		openEngagement(cfg, mode, *openFlag)
+		openEngagement(cfg, mode, *openFlag, *cliSSHHost)
 		return
 	}
 
@@ -112,18 +113,15 @@ func main() {
 	}
 	logInfo("engagement directory: %s", engagementDir)
 
+	var stats hostStats
 	if absHostFile != "" {
 		logDebug("processing host file: %s", absHostFile)
-		stats, err := processHostFile(absHostFile, engagementDir)
+		stats, err = processHostFile(absHostFile, engagementDir)
 		if err != nil {
 			fatal("processing hosts: %v", err)
 		}
 		logInfo("hosts processed: %d unique (%d with URL, %d without)",
 			stats.Unique, stats.HTTP, stats.Unique-stats.HTTP)
-
-		if err := updateMetaHostCount(engagementDir, stats.Unique); err != nil {
-			logWarn("could not update engagement metadata with host count: %v", err)
-		}
 	}
 
 	if dryRun {
@@ -131,7 +129,14 @@ func main() {
 		return
 	}
 
-	launchShell(engagementDir)
+	// Build engagement env vars and persist the full context to .engage.json so
+	// that recon_jr and other tools can load it without requiring an active session.
+	engageEnv := buildTmuxEnv(cfg, mode, name, engagementDir, *cliSSHHost)
+	if err := updateMetaContext(engagementDir, cfg, mode, name, stats, *cliSSHHost, engageEnv); err != nil {
+		logWarn("could not update engagement context: %v", err)
+	}
+
+	launchShell(cfg, mode, name, engagementDir, *cliSSHHost)
 }
 
 // validateName rejects engagement names that could create unexpected filesystem
@@ -186,10 +191,11 @@ Modes (default: -w):
 
 Options:
   -list              List all existing engagements and exit (combine with mode to filter)
-  -open <name>       Resume an existing engagement by name
-  -finish <name>     Archive and GPG-sign an existing engagement
+  -open <name>       Resume an existing engagement (attaches to tmux session if enabled)
+  -finish <name>     Archive and GPG-sign an existing engagement (kills tmux session)
+  -ssh <alias>       SSH config alias for VPS connection (sets ENGAGE_SSH_HOST in tmux session)
   -burp-jar <path>   Path to Burp Suite jar
-  -base-dir <path>   Base directory (default: ~/Share)
+  -base-dir <path>   Base directory (default: /Share)
   -config   <path>   Config JSON file (default: ~/.config/engage_jr/config.json)
   -dry-run           Show what would be created without making any changes
   -verbose           Print debug information
@@ -198,14 +204,36 @@ Options:
 Config precedence (highest to lowest):
   CLI flags > env vars > config file > defaults
 
-Env vars:  ENGAGE_BURP_JAR, ENGAGE_BASE_DIR, ENGAGE_BURP_TIMEOUT
+Env vars:
+  ENGAGE_BURP_JAR, ENGAGE_BASE_DIR, ENGAGE_BURP_TIMEOUT
+  ENGAGE_TMUX (1/true to enable tmux), ENGAGE_TMUX_SESSION_PREFIX
+  ENGAGE_OBSIDIAN_BIN, ENGAGE_OBSIDIAN_VAULT
 
 Config file format (~/.config/engage_jr/config.json):
   {
-    "burp_jar":          "/path/to/burpsuite.jar",
-    "base_dir":          "/path/to/base",
-    "burp_timeout_secs": 90,
-    "work_dirs":         ["nmap", "burp", "nessus", "gobuster", "screenshots"]
+    "burp_jar":              "/path/to/burpsuite.jar",
+    "base_dir":              "/path/to/base",
+    "burp_timeout_secs":     90,
+    "work_dirs":             ["nmap", "burp", "nessus", "gobuster", "screenshots"],
+    "tmux_enabled":          true,
+    "tmux_prefix":           "",
+    "obsidian_bin":          "obsidian",
+    "obsidian_synced_vault": "~/Notes",
+    "ssh_hosts":             {"work": "my-vps"},
+    "tmux_layouts": {
+      "work": [
+        {
+          "name": "main", "focus_pane": 0,
+          "panes": [
+            {},
+            {"split_direction": "v", "percent": 40},
+            {"split_direction": "h", "split_from": 1,
+             "command": "[ -n \"$ENGAGE_SSH_HOST\" ] && ssh $ENGAGE_SSH_HOST"}
+          ]
+        },
+        {"name": "notes", "panes": [{"command": "cd \"$ENGAGE_NOTES_DIR\" && xdg-open \"obsidian://open?path=$ENGAGE_NOTES_DIR\" 2>/dev/null"}]}
+      ]
+    }
   }
 
 `)

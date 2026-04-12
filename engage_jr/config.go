@@ -6,25 +6,55 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 const (
-	envBurpJar     = "ENGAGE_BURP_JAR"
-	envBaseDir     = "ENGAGE_BASE_DIR"
-	envBurpTimeout = "ENGAGE_BURP_TIMEOUT"
+	envBurpJar           = "ENGAGE_BURP_JAR"
+	envBaseDir           = "ENGAGE_BASE_DIR"
+	envBurpTimeout       = "ENGAGE_BURP_TIMEOUT"
+	envTmux              = "ENGAGE_TMUX"
+	envTmuxSessionPrefix = "ENGAGE_TMUX_SESSION_PREFIX"
+	envObsidianBin       = "ENGAGE_OBSIDIAN_BIN"
+	envObsidianVault     = "ENGAGE_OBSIDIAN_VAULT"
 
 	defaultBurpTimeoutSecs = 60
+	defaultObsidianVault   = "~/Notes"
 )
 
 // defaultWorkDirs is the subdirectory layout created under a work engagement
 // when no custom work_dirs are specified in the config file.
 var defaultWorkDirs = []string{"nmap", "burp", "nessus", "other"}
 
+// TmuxPaneConfig describes a single pane within a tmux window layout.
+// The first pane in a window always exists on creation; subsequent panes are
+// created by splitting the pane at SplitFrom (or the previous pane if nil).
+type TmuxPaneConfig struct {
+	SplitDirection string `json:"split_direction,omitempty"` // "h" (right) or "v" (below); default "v"
+	SplitFrom      *int   `json:"split_from,omitempty"`      // pane index to split; nil = previous pane
+	Percent        int    `json:"percent,omitempty"`         // percentage for the new pane (0 = tmux default)
+	Command        string `json:"command,omitempty"`         // command typed into the pane shell after creation
+}
+
+// TmuxWindowConfig describes a tmux window and its pane layout.
+// FocusPane selects which pane index is active after all panes are created.
+type TmuxWindowConfig struct {
+	Name      string           `json:"name"`
+	Panes     []TmuxPaneConfig `json:"panes,omitempty"`
+	FocusPane int              `json:"focus_pane"` // pane index to focus after layout (default 0)
+}
+
 type Config struct {
-	BurpJar         string   `json:"burp_jar"`
-	BaseDir         string   `json:"base_dir"`
-	BurpTimeoutSecs int      `json:"burp_timeout_secs"`
-	WorkDirs        []string `json:"work_dirs"`
+	BurpJar             string                        `json:"burp_jar"`
+	BaseDir             string                        `json:"base_dir"`
+	BurpTimeoutSecs     int                           `json:"burp_timeout_secs"`
+	WorkDirs            []string                      `json:"work_dirs"`
+	TmuxEnabled         bool                          `json:"tmux_enabled"`
+	TmuxPrefix          string                        `json:"tmux_prefix"`           // prepended to session name; empty = use engagement name directly
+	TmuxLayouts         map[string][]TmuxWindowConfig `json:"tmux_layouts"`          // keyed by mode string; overrides built-in defaults
+	SSHHosts            map[string]string             `json:"ssh_hosts"`             // per-mode VPS/jump host alias; defers to ~/.ssh/config for key/port-forward details
+	ObsidianBin         string                        `json:"obsidian_bin"`          // obsidian binary or full command
+	ObsidianSyncedVault string                        `json:"obsidian_synced_vault"` // synced vault for HTB/THM/exam/swigger (default ~/Notes)
 }
 
 // loadConfig builds a Config by layering sources in ascending priority:
@@ -36,10 +66,12 @@ func loadConfig(configPath, cliBurpJar, cliBaseDir string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		BurpJar:         filepath.Join(home, "BurpSuitePro", "burpsuite_pro.jar"),
-		BaseDir:         filepath.Join("/", "Share"),
-		BurpTimeoutSecs: defaultBurpTimeoutSecs,
-		WorkDirs:        defaultWorkDirs,
+		BurpJar:             filepath.Join(home, "BurpSuitePro", "burpsuite_pro.jar"),
+		BaseDir:             filepath.Join("/", "Share"),
+		BurpTimeoutSecs:     defaultBurpTimeoutSecs,
+		WorkDirs:            defaultWorkDirs,
+		ObsidianBin:         "obsidian",
+		ObsidianSyncedVault: defaultObsidianVault,
 	}
 
 	// Config file — silently skipped if absent, warned on any other read error.
@@ -64,6 +96,24 @@ func loadConfig(configPath, cliBurpJar, cliBaseDir string) (*Config, error) {
 		if len(fileCfg.WorkDirs) > 0 {
 			cfg.WorkDirs = fileCfg.WorkDirs
 		}
+		if fileCfg.TmuxEnabled {
+			cfg.TmuxEnabled = true
+		}
+		if fileCfg.TmuxPrefix != "" {
+			cfg.TmuxPrefix = fileCfg.TmuxPrefix
+		}
+		if len(fileCfg.TmuxLayouts) > 0 {
+			cfg.TmuxLayouts = fileCfg.TmuxLayouts
+		}
+		if len(fileCfg.SSHHosts) > 0 {
+			cfg.SSHHosts = fileCfg.SSHHosts
+		}
+		if fileCfg.ObsidianBin != "" {
+			cfg.ObsidianBin = fileCfg.ObsidianBin
+		}
+		if fileCfg.ObsidianSyncedVault != "" {
+			cfg.ObsidianSyncedVault = fileCfg.ObsidianSyncedVault
+		}
 		logDebug("loaded config from %s", configPath)
 	} else if !os.IsNotExist(readErr) {
 		logWarn("could not read config file %s: %v", configPath, readErr)
@@ -83,6 +133,19 @@ func loadConfig(configPath, cliBurpJar, cliBaseDir string) (*Config, error) {
 		} else {
 			cfg.BurpTimeoutSecs = n
 		}
+	}
+	if v := os.Getenv(envTmux); v != "" {
+		v = strings.ToLower(strings.TrimSpace(v))
+		cfg.TmuxEnabled = v == "1" || v == "true"
+	}
+	if v := os.Getenv(envTmuxSessionPrefix); v != "" {
+		cfg.TmuxPrefix = v
+	}
+	if v := os.Getenv(envObsidianBin); v != "" {
+		cfg.ObsidianBin = v
+	}
+	if v := os.Getenv(envObsidianVault); v != "" {
+		cfg.ObsidianSyncedVault = v
 	}
 
 	// CLI flags — highest priority.
