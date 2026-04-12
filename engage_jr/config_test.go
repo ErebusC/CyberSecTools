@@ -158,18 +158,56 @@ func TestLoadConfigInvalidJSON(t *testing.T) {
 	}
 }
 
-func TestLoadConfigTmuxDisabledByDefault(t *testing.T) {
+func TestLoadConfigTmuxEnabledByDefault(t *testing.T) {
 	unsetTmuxEnvs(t)
 
 	cfg, err := loadConfig("/nonexistent/config.json", "", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.TmuxEnabled {
-		t.Error("TmuxEnabled should be false by default")
+	if !cfg.tmuxEnabled() {
+		t.Error("tmux should be enabled by default (nil TmuxEnabled → true)")
 	}
 	if cfg.TmuxPrefix != "" {
 		t.Errorf("TmuxPrefix = %q, want empty (no prefix by default)", cfg.TmuxPrefix)
+	}
+}
+
+func TestLoadConfigTmuxDisableViaEnv(t *testing.T) {
+	unsetTmuxEnvs(t)
+	for _, val := range []string{"0", "false", "FALSE"} {
+		t.Run(val, func(t *testing.T) {
+			os.Setenv(envTmux, val)
+			defer os.Unsetenv(envTmux)
+
+			cfg, err := loadConfig("/nonexistent/config.json", "", "")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.tmuxEnabled() {
+				t.Errorf("tmux should be disabled for ENGAGE_TMUX=%q", val)
+			}
+		})
+	}
+}
+
+func TestLoadConfigTmuxDisableViaFile(t *testing.T) {
+	unsetTmuxEnvs(t)
+
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.json")
+	disabled := false
+	data, _ := json.Marshal(map[string]interface{}{"tmux_enabled": disabled})
+	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(cfgPath, "", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.tmuxEnabled() {
+		t.Error("tmux should be disabled when config file sets tmux_enabled: false")
 	}
 }
 
@@ -184,8 +222,8 @@ func TestLoadConfigTmuxEnvVar(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !cfg.TmuxEnabled {
-				t.Errorf("TmuxEnabled = false for ENGAGE_TMUX=%q, want true", val)
+			if !cfg.tmuxEnabled() {
+				t.Errorf("tmuxEnabled() = false for ENGAGE_TMUX=%q, want true", val)
 			}
 		})
 	}
@@ -212,8 +250,16 @@ func TestLoadConfigObsidianDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.ObsidianBin != "obsidian" {
-		t.Errorf("ObsidianBin = %q, want obsidian", cfg.ObsidianBin)
+
+	// The GUI binary at /opt/Obsidian/obsidian is preferred when it exists;
+	// otherwise the default falls back to the "obsidian" name in PATH.
+	const guiBin = "/opt/Obsidian/obsidian"
+	wantBin := "obsidian"
+	if fi, err := os.Stat(guiBin); err == nil && fi.Mode()&0111 != 0 {
+		wantBin = guiBin
+	}
+	if cfg.ObsidianBin != wantBin {
+		t.Errorf("ObsidianBin = %q, want %q", cfg.ObsidianBin, wantBin)
 	}
 	if cfg.ObsidianSyncedVault != defaultObsidianVault {
 		t.Errorf("ObsidianSyncedVault = %q, want %q", cfg.ObsidianSyncedVault, defaultObsidianVault)

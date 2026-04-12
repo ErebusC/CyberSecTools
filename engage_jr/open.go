@@ -38,7 +38,7 @@ func openEngagement(cfg *Config, mode engagementMode, name, sshHost string) {
 // after an engagement directory is ready. When tmux is enabled it delegates to
 // launchTmux; otherwise it falls back to launchPlainShell.
 func launchShell(cfg *Config, mode engagementMode, name, dir, sshHost string) {
-	if cfg.TmuxEnabled {
+	if cfg.tmuxEnabled() {
 		launchTmux(cfg, mode, name, dir, sshHost)
 		return
 	}

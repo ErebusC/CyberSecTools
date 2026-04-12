@@ -73,7 +73,7 @@ func updateMetaContext(dir string, cfg *Config, mode engagementMode, name string
 	meta.HTTPTargets = readHostsFile(filepath.Join(dir, "http_hosts"))
 	meta.SSHHost = sshHost
 
-	if cfg.TmuxEnabled {
+	if cfg.tmuxEnabled() {
 		meta.TmuxSession = tmuxSessionName(cfg, name)
 	}
 

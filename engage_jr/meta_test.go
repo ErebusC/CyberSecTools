@@ -77,7 +77,7 @@ func TestUpdateMetaContext(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "hosts"), []byte("10.0.0.1\n10.0.0.2\n"), 0644)
 	os.WriteFile(filepath.Join(dir, "http_hosts"), []byte("http://example.com\n"), 0644)
 
-	cfg := &Config{TmuxEnabled: true, TmuxPrefix: ""}
+	cfg := &Config{TmuxEnabled: boolPtr(true), TmuxPrefix: ""}
 	stats := hostStats{Unique: 2, HTTP: 1}
 	envVars := []string{"ENGAGE_NAME=acmecorp_1", "TARGET_1=10.0.0.1", "TARGET_2=10.0.0.2"}
 
@@ -133,7 +133,7 @@ func TestUpdateMetaContextTmuxDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cfg := &Config{TmuxEnabled: false}
+	cfg := &Config{TmuxEnabled: boolPtr(false)}
 	if err := updateMetaContext(dir, cfg, ModeHTB, "lab1", hostStats{}, "", nil); err != nil {
 		t.Fatalf("updateMetaContext failed: %v", err)
 	}

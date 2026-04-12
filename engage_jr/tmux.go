@@ -8,25 +8,33 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // intPtr is a helper for taking the address of an int literal in layout configs.
 func intPtr(n int) *int { return &n }
 
-// notesCommand returns the shell command used in the notes pane/window.
-// It navigates to the notes directory and launches the Obsidian GUI via the
-// registered obsidian:// URI handler, then drops into a shell in that directory.
-const notesCommand = `cd "$ENGAGE_NOTES_DIR" && xdg-open "obsidian://open?path=$ENGAGE_NOTES_DIR" 2>/dev/null`
+// notesCommand is the shell command used in the notes pane/window.
+// Calls the Obsidian binary directly (via $ENGAGE_OBSIDIAN_BIN) so that:
+//   - When Obsidian is not running it starts a new instance, reads obsidian.json,
+//     and opens the vault by name.
+//   - When Obsidian is already running, Electron's single-instance lock forwards
+//     the URI to the live process.
+// xdg-open is intentionally avoided: it can only dispatch to an already-running
+// instance and will silently do nothing when Obsidian is not open.
+// The vault name equals the engagement name (basename of ENGAGE_NOTES_DIR),
+// ensuring each engagement's vault has a unique, unambiguous name.
+const notesCommand = `VAULT_NAME=$(basename "$ENGAGE_NOTES_DIR"); nohup "$ENGAGE_OBSIDIAN_BIN" "obsidian://open?vault=$VAULT_NAME" >/dev/null 2>&1 & cd "$ENGAGE_NOTES_DIR" 2>/dev/null`
 
 // defaultTmuxLayouts defines the built-in per-mode tmux window/pane layouts.
 // Users can override any mode's layout via "tmux_layouts" in config.json.
 //
-// Pane layout for all modes uses vertical splits (top/bottom):
+// Pane layout for all modes:
 //
 //	Work — window "main":
-//	  pane 0 (top, 60%): main shell
-//	  pane 1 (bottom-left, 40%): recon
-//	  pane 2 (bottom-right, 40%): VPS SSH ($ENGAGE_SSH_HOST)
+//	  pane 0 (left, 50%): main shell
+//	  pane 1 (top-right, 50%): recon_jr
+//	  pane 2 (bottom-right, 50%): VPS SSH ($ENGAGE_SSH_HOST)
 //	  window "notes": cd to notes dir + open Obsidian vault
 //
 //	HTB / THM — window "attack":
@@ -49,8 +57,8 @@ var defaultTmuxLayouts = map[string][]TmuxWindowConfig{
 			FocusPane: 0,
 			Panes: []TmuxPaneConfig{
 				{},
-				{SplitDirection: "v", Percent: 40},
-				{SplitDirection: "h", SplitFrom: intPtr(1),
+				{SplitDirection: "h", Percent: 50},
+				{SplitDirection: "v", SplitFrom: intPtr(1), Percent: 50,
 					Command: `[ -n "$ENGAGE_SSH_HOST" ] && ssh $ENGAGE_SSH_HOST`},
 			},
 		},
@@ -184,8 +192,10 @@ func buildTmuxEnv(cfg *Config, mode engagementMode, name, engDir, sshHost string
 	set("ENGAGE_BURP_DIR", filepath.Join(engDir, "burp"))
 
 	// Notes directory: isolated engagement vault for work, synced vault for others.
+	// Work vaults live at <engDir>/notes/<name>/ so the vault name (its basename)
+	// equals the engagement name — unique across all engagements.
 	if mode == ModeWork {
-		set("ENGAGE_NOTES_DIR", filepath.Join(engDir, "notes"))
+		set("ENGAGE_NOTES_DIR", filepath.Join(engDir, "notes", name))
 	} else {
 		set("ENGAGE_NOTES_DIR", expandHome(cfg.ObsidianSyncedVault))
 	}
@@ -246,6 +256,8 @@ func getLayout(cfg *Config, mode engagementMode) []TmuxWindowConfig {
 
 // applyLayout creates windows and panes according to the layout definition.
 // Environment variables set via applyTmuxEnv are inherited by new panes.
+// Each pane's unique tmux ID (e.g. %3) is captured on creation so that
+// send-keys and select-pane targets are independent of pane-base-index.
 func applyLayout(session, engDir string, windows []TmuxWindowConfig) {
 	for winIdx, win := range windows {
 		var windowTarget string
@@ -261,64 +273,122 @@ func applyLayout(session, engDir string, windows []TmuxWindowConfig) {
 			windowTarget = session + ":" + win.Name
 		}
 
-		currentPane := 0
+		// Collect unique pane IDs (%N) as each pane is created so targeting
+		// is not affected by the user's pane-base-index option.
+		paneIDs := make([]string, 0, len(win.Panes))
+		out, err := exec.Command("tmux", "display-message", "-t", windowTarget, "-p", "#{pane_id}").Output()
+		if err != nil {
+			logWarn("could not get initial pane ID in window %q: %v", win.Name, err)
+		}
+		paneIDs = append(paneIDs, strings.TrimSpace(string(out)))
+
 		for paneIdx, pane := range win.Panes {
 			if paneIdx == 0 {
-				if pane.Command != "" {
-					exec.Command("tmux", "send-keys", "-t",
-						fmt.Sprintf("%s.%d", windowTarget, 0),
-						pane.Command, "Enter").Run()
+				if pane.Command != "" && paneIDs[0] != "" {
+					exec.Command("tmux", "send-keys", "-t", paneIDs[0], pane.Command, "Enter").Run()
 				}
 				continue
 			}
 
-			splitFrom := currentPane
+			splitFromIdx := paneIdx - 1
 			if pane.SplitFrom != nil {
-				splitFrom = *pane.SplitFrom
+				splitFromIdx = *pane.SplitFrom
+			}
+			splitTarget := fmt.Sprintf("%s.%d", windowTarget, splitFromIdx) // numeric fallback
+			if splitFromIdx < len(paneIDs) && paneIDs[splitFromIdx] != "" {
+				splitTarget = paneIDs[splitFromIdx]
 			}
 
 			args := []string{
 				"split-window",
-				"-t", fmt.Sprintf("%s.%d", windowTarget, splitFrom),
+				"-t", splitTarget,
 				"-c", engDir,
+				"-P", "-F", "#{pane_id}",
 			}
-			if pane.SplitDirection == "h" {
-				args = append(args, "-h")
+			if pane.SplitDirection == "v" {
+				args = append(args, "-v")
 			} else {
-				args = append(args, "-v") // default to vertical (top/bottom)
+				args = append(args, "-h") // default to vertical (top/bottom)
 			}
 			if pane.Percent > 0 {
 				args = append(args, "-p", strconv.Itoa(pane.Percent))
 			}
 
-			if err := exec.Command("tmux", args...).Run(); err != nil {
+			out, err := exec.Command("tmux", args...).Output()
+			if err != nil {
 				logWarn("could not create pane %d in window %q: %v", paneIdx, win.Name, err)
+				paneIDs = append(paneIDs, "") // keep slice aligned with config indices
 				continue
 			}
-			currentPane = paneIdx
+			newID := strings.TrimSpace(string(out))
+			paneIDs = append(paneIDs, newID)
 
-			if pane.Command != "" {
-				exec.Command("tmux", "send-keys", "-t",
-					fmt.Sprintf("%s.%d", windowTarget, paneIdx),
-					pane.Command, "Enter").Run()
+			if pane.Command != "" && newID != "" {
+				exec.Command("tmux", "send-keys", "-t", newID, pane.Command, "Enter").Run()
 			}
 		}
 
-		exec.Command("tmux", "select-pane", "-t",
-			fmt.Sprintf("%s.%d", windowTarget, win.FocusPane)).Run()
+		if win.FocusPane < len(paneIDs) && paneIDs[win.FocusPane] != "" {
+			exec.Command("tmux", "select-pane", "-t", paneIDs[win.FocusPane]).Run()
+		}
 	}
 }
 
 // attachSession attaches the current terminal to the named tmux session,
-// forwarding stdin/stdout/stderr.
+// forwarding stdin/stdout/stderr. When already inside a tmux session it uses
+// switch-client instead of attach-session, which doesn't work nested.
 func attachSession(session string) {
-	cmd := exec.Command("tmux", "attach-session", "-t", session)
+	var cmd *exec.Cmd
+	if os.Getenv("TMUX") != "" {
+		cmd = exec.Command("tmux", "switch-client", "-t", session)
+	} else {
+		cmd = exec.Command("tmux", "attach-session", "-t", session)
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "tmux attach exited: %v\n", err)
 	}
+}
+
+// tmuxServerCanAccess tests whether the running tmux server's shell environment
+// can read dir. It uses tmux run-shell -b to execute a test inside the server's
+// own process context (which inherits the server's credentials/groups), then
+// synchronises via tmux wait-for. Returns true if no server is running (a new
+// session will start a fresh server with current credentials), or if the check
+// cannot be performed. Only returns false when the check definitively fails.
+func tmuxServerCanAccess(dir string) bool {
+	// No running server — new-session will start one with current credentials.
+	if exec.Command("tmux", "list-sessions").Run() != nil {
+		return true
+	}
+
+	tmp, err := os.CreateTemp("", "engage_access_*")
+	if err != nil {
+		return true
+	}
+	tmp.Close()
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	channel := fmt.Sprintf("engage_access_%d", os.Getpid())
+	checkCmd := fmt.Sprintf(`[ -r '%s' ] && printf ok > '%s'; tmux wait-for -S '%s'`,
+		dir, tmpPath, channel)
+	if exec.Command("tmux", "run-shell", "-b", checkCmd).Run() != nil {
+		return true
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- exec.Command("tmux", "wait-for", channel).Run() }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		return true
+	}
+
+	data, _ := os.ReadFile(tmpPath)
+	return strings.TrimSpace(string(data)) == "ok"
 }
 
 // launchTmux attaches to or creates the tmux session for the named engagement.
@@ -341,9 +411,20 @@ func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) 
 	session := tmuxSessionName(cfg, name)
 
 	if !tmuxSessionExists(session) {
+		// Pre-flight: verify the tmux server can access the engagement directory.
+		// If it can't, the server was likely started before the vboxsf group was
+		// active. All panes would silently lack access to /Share.
+		if !tmuxServerCanAccess(engDir) {
+			logWarn("tmux server cannot access %s", engDir)
+			logWarn("server was likely started before the vboxsf group was active")
+			logWarn("fix: tmux kill-server, then rerun engage_jr")
+			launchPlainShell(engDir)
+			return
+		}
+
 		// Ensure the notes directory and Obsidian vault skeleton exist for work.
 		if mode == ModeWork {
-			notesDir := filepath.Join(engDir, "notes", ".obsidian")
+			notesDir := filepath.Join(engDir, "notes", name, ".obsidian")
 			if err := os.MkdirAll(notesDir, 0755); err != nil {
 				logWarn("could not create notes vault: %v", err)
 			}
@@ -365,6 +446,16 @@ func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) 
 
 		// Also update the session environment so subsequently created panes inherit.
 		applyTmuxEnv(session, envVars)
+
+		// Register the notes vault with Obsidian before the notes pane opens it.
+		// Work vaults live at <engDir>/notes/<name>/ so the vault name is unique.
+		notesDir := filepath.Join(engDir, "notes", name)
+		if mode != ModeWork {
+			notesDir = expandHome(cfg.ObsidianSyncedVault)
+		}
+		if err := ensureObsidianVault(notesDir); err != nil {
+			logWarn("could not register obsidian vault: %v", err)
+		}
 
 		applyLayout(session, engDir, getLayout(cfg, mode))
 
