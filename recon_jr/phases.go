@@ -518,27 +518,28 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 			var webPorts []NmapWebPort
 
 			// Pass 1: fast full-port TCP scan to identify open ports
-			portXML := filepath.Join(nmapDir, "nmap_ports_"+safe+".xml")
+			// -oA writes <base>.xml, <base>.nmap (human-readable), <base>.gnmap
+			tcpFullBase := filepath.Join(nmapDir, "nmap_tcp-fullports_"+safe)
 			portRes := r.RunLong("nmap", "nmap", []string{
 				"-p-", "--min-rate", "2000", "-T4", "--open",
-				"-oX", portXML, h,
+				"-oA", tcpFullBase, h,
 			}, "")
 
 			if !portRes.Skipped && portRes.Err == nil {
-				openPorts, err := extractOpenPortList(portXML)
+				openPorts, err := extractOpenPortList(tcpFullBase + ".xml")
 				if err == nil && len(openPorts) > 0 {
 					// Pass 2: detailed service/version + NSE on open ports only
-					outXML := filepath.Join(nmapDir, "nmap_"+safe+".xml")
+					tcpSvcBase := filepath.Join(nmapDir, "nmap_tcp-svc_"+safe)
 					detailRes := r.RunLong("nmap", "nmap", []string{
 						"-sV", "-sC", "--version-intensity", "5",
 						"-p", strings.Join(openPorts, ","),
-						"-oX", outXML, h,
+						"-oA", tcpSvcBase, h,
 					}, "")
 					if !detailRes.Skipped && detailRes.Err == nil {
-						if f, err := ParseNmap(outXML, h); err == nil {
+						if f, err := ParseNmap(tcpSvcBase+".xml", h); err == nil {
 							allFindings = append(allFindings, f...)
 						}
-						if wp, err := ParseNmapWebPorts(outXML); err == nil {
+						if wp, err := ParseNmapWebPorts(tcpSvcBase + ".xml"); err == nil {
 							webPorts = wp
 						}
 					}
@@ -549,9 +550,9 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 
 			// UDP top-20 scan
 			if !interrupted.Load() {
-				udpXML := filepath.Join(nmapDir, "nmap_udp_"+safe+".xml")
+				udpTop20Base := filepath.Join(nmapDir, "nmap_udp-top20_"+safe)
 				udpRes := r.RunLong("nmap", "nmap", []string{
-					"-sU", "--top-ports", "20", "-oX", udpXML, h,
+					"-sU", "--top-ports", "20", "-oA", udpTop20Base, h,
 				}, "")
 				if udpRes.ExitCode != 0 &&
 					(strings.Contains(udpRes.Stderr, "root") || strings.Contains(udpRes.Stderr, "privileged")) {
@@ -559,7 +560,7 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 						logWarn("  UDP scan requires root privileges — skipping (run as root to enable)")
 					})
 				} else if !udpRes.Skipped && udpRes.Err == nil {
-					if f, err := ParseNmap(udpXML, h); err == nil {
+					if f, err := ParseNmap(udpTop20Base+".xml", h); err == nil {
 						allFindings = append(allFindings, f...)
 					}
 				}

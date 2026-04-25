@@ -134,7 +134,9 @@ All output is written into the engagement directory:
 ├── discovered_hosts          # Hosts found during enumeration
 ├── discovered_endpoints      # URLs found during crawling
 ├── nmap/
-│   └── nmap_<host>.xml
+│   ├── nmap_tcp-fullports_<host>.{xml,nmap,gnmap}   # pass 1: full TCP port sweep
+│   ├── nmap_tcp-svc_<host>.{xml,nmap,gnmap}         # pass 2: service/version + NSE on open ports
+│   └── nmap_udp-top20_<host>.{xml,nmap,gnmap}       # UDP top-20
 ├── nessus/
 │   ├── <name>.nessus
 │   ├── nessus_results.json   # Medium/High/Critical findings

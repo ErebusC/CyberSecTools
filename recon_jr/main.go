@@ -421,7 +421,7 @@ Output files (in engagement directory):
   .recon.json              — run state and phase status
   discovered_hosts         — subdomains found in Phase 1
   discovered_endpoints     — endpoints from Phase 4/6
-  nmap/                    — nmap XML output
+  nmap/                    — nmap output (.xml/.nmap/.gnmap per scan per host)
   nessus/                  — .nessus file and filtered JSON
   other/                   — all other tool output
 
