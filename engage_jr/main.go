@@ -88,7 +88,7 @@ func main() {
 	// Validate and resolve the host file path before creating any directories
 	// so a typo does not leave behind an empty engagement directory.
 	var absHostFile string
-	if mode == ModeWork && len(args) >= 2 {
+	if (mode == ModeWork || mode == ModeExam) && len(args) >= 2 {
 		absHostFile, err = filepath.Abs(args[1])
 		if err != nil {
 			fatal("resolving host file path: %v", err)
@@ -101,7 +101,7 @@ func main() {
 			fatal("host file %q is not a regular file", absHostFile)
 		}
 		logDebug("host file validated: %s", absHostFile)
-	} else if mode == ModeWork {
+	} else if mode == ModeWork || mode == ModeExam {
 		logWarn("no host file provided — directories will be created but hosts will not be processed")
 	}
 
