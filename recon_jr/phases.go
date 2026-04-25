@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -63,7 +64,6 @@ var toolBinaries = map[string]string{
 
 // intrusiveTools lists tools that require -allow-intrusive to run.
 var intrusiveTools = map[string]bool{
-	"nikto":      true,
 	"arjun":      true,
 	"naabu":      true,
 	"wpscan":     true,
@@ -521,7 +521,7 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 			// -oA writes <base>.xml, <base>.nmap (human-readable), <base>.gnmap
 			tcpFullBase := filepath.Join(nmapDir, "nmap_tcp-fullports_"+safe)
 			portRes := r.RunLong("nmap", "nmap", []string{
-				"-p-", "--min-rate", "2000", "-T4", "--open",
+				"-p-", "--open",
 				"-oA", tcpFullBase, h,
 			}, "")
 
@@ -531,7 +531,7 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 					// Pass 2: detailed service/version + NSE on open ports only
 					tcpSvcBase := filepath.Join(nmapDir, "nmap_tcp-svc_"+safe)
 					detailRes := r.RunLong("nmap", "nmap", []string{
-						"-sV", "-sC", "--version-intensity", "5",
+						"-sV", "-sC",
 						"-p", strings.Join(openPorts, ","),
 						"-oA", tcpSvcBase, h,
 					}, "")
@@ -762,6 +762,8 @@ func runPhase4(r *Runner, s *RunState) error {
 					"-x", "php,asp,aspx,jsp,txt,bak,old,conf,config,log",
 					"-o", feroxOut, "--json", "-q", "--no-state",
 					"--threads", "20",
+					"--rate-limit", "50",
+					"--timeout", "5",
 					"--extract-links",
 				}, proxyFlagForTool("feroxbuster", s.Cfg.ProxyURL)...)
 				feroxRes := r.RunLong("feroxbuster", "feroxbuster", feroxArgs, feroxOut)
@@ -804,6 +806,33 @@ func runPhase4(r *Runner, s *RunState) error {
 		}
 	}
 
+	// well-known URLs — robots.txt, sitemap, security.txt
+	for _, host := range s.HTTPHosts {
+		if interrupted.Load() {
+			break
+		}
+		runWellKnown(r, s, host, otherDir)
+		r.Delay()
+	}
+
+	// API surface enumeration — common API roots, OpenAPI/Swagger docs, GraphQL
+	for _, host := range s.HTTPHosts {
+		if interrupted.Load() {
+			break
+		}
+		runAPISurface(r, s, host, otherDir)
+		r.Delay()
+	}
+
+	// Auth and OAuth endpoint discovery
+	for _, host := range s.HTTPHosts {
+		if interrupted.Load() {
+			break
+		}
+		runAuthSurface(r, s, host, otherDir)
+		r.Delay()
+	}
+
 	// arjun — hidden parameter discovery (intrusive)
 	if s.AllowIntrusive && !interrupted.Load() {
 		for _, host := range s.HTTPHosts {
@@ -815,6 +844,11 @@ func runPhase4(r *Runner, s *RunState) error {
 			r.Run("arjun", "arjun", []string{"-u", host, "-oJ", outFile}, "")
 			r.Delay()
 		}
+	}
+
+	// SSRF and open redirect surface mapping — post-processing, no new requests
+	if !interrupted.Load() {
+		buildSSRFSurface(s.EngDir, otherDir)
 	}
 
 	if interrupted.Load() {
@@ -869,8 +903,8 @@ func runPhase5(r *Runner, s *RunState) error {
 		r.Delay()
 	}
 
-	// nikto — intrusive, one per HTTP host
-	if s.AllowIntrusive && !interrupted.Load() {
+	// nikto — one per HTTP host
+	if !interrupted.Load() {
 		for _, host := range s.HTTPHosts {
 			if interrupted.Load() {
 				break
@@ -1101,8 +1135,9 @@ func runPhase7(r *Runner, s *RunState) error {
 			proxyFlagForTool("curl", s.Cfg.ProxyURL)...)
 		res := r.Run("curl", "curl", curlArgs, outFile)
 		if !res.Skipped && res.Err == nil {
-			if _, findings, err := ParseSecurityHeaders(outFile, host); err == nil {
+			if sh, findings, err := ParseSecurityHeaders(outFile, host); err == nil {
 				s.Report.AddFindings(findings)
+				writeRateLimitSummary(sh, otherDir)
 			}
 		}
 		r.Delay()
@@ -1220,6 +1255,419 @@ func checkCORSMisconfiguration(r *Runner, s *RunState, host string) {
 			Detail:   "Access-Control-Allow-Origin: * combined with Allow-Credentials: true is invalid per spec — may indicate misconfigured CORS policy",
 			Severity: SevLow,
 		})
+	}
+}
+
+// ---- Auth and OAuth endpoint discovery --------------------------------------
+
+var authProbePaths = []string{
+	"/login", "/signin", "/sign-in", "/log-in",
+	"/logout", "/signout", "/sign-out", "/log-out",
+	"/register", "/signup", "/sign-up",
+	"/auth", "/auth/login", "/auth/callback", "/auth/token",
+	"/oauth", "/oauth/authorize", "/oauth/token", "/oauth/callback", "/oauth/revoke",
+	"/oauth2", "/oauth2/authorize", "/oauth2/token", "/oauth2/callback",
+	"/saml", "/saml/sso", "/saml/acs", "/saml/metadata",
+	"/sso", "/sso/login", "/sso/callback",
+	"/account/login", "/account/signin", "/user/login",
+	"/admin", "/admin/login", "/administrator",
+	"/forgot-password", "/reset-password", "/password/reset",
+	"/mfa", "/2fa", "/two-factor",
+}
+
+var oidcWellKnownPaths = []string{
+	"/.well-known/openid-configuration",
+	"/.well-known/oauth-authorization-server",
+	"/.well-known/jwks.json",
+}
+
+// runAuthSurface probes a host for authentication endpoints and OAuth/OIDC
+// well-known documents. Results are written to other/auth_endpoints_<host>.txt
+// and appended to discovered_endpoints.
+func runAuthSurface(r *Runner, s *RunState, host, otherDir string) {
+	safe := sanitizeForFilename(host)
+	base := strings.TrimRight(host, "/")
+	outFile := filepath.Join(otherDir, "auth_endpoints_"+safe+".txt")
+
+	proxyArgs := proxyFlagForTool("curl", s.Cfg.ProxyURL)
+	var found []string
+
+	// Probe common auth paths
+	for _, p := range authProbePaths {
+		url := base + p
+		stdout, res := r.RunWithOutput("curl", "curl", append([]string{
+			"-s", "-o", "/dev/null", "-w", "%{http_code}",
+			"-m", "10", "--max-redirs", "3", url,
+		}, proxyArgs...))
+		if res.Skipped || res.Err != nil {
+			continue
+		}
+		code := strings.TrimSpace(stdout)
+		switch code {
+		case "200", "301", "302", "401", "403":
+			found = append(found, fmt.Sprintf("%s  [HTTP %s]", url, code))
+		}
+	}
+
+	// Fetch and parse OIDC/OAuth well-known documents
+	for _, p := range oidcWellKnownPaths {
+		url := base + p
+		body, res := r.RunWithOutput("curl", "curl", append([]string{
+			"-s", "-m", "10", "-L", "--max-redirs", "3", url,
+		}, proxyArgs...))
+		if res.Skipped || res.Err != nil || strings.TrimSpace(body) == "" {
+			continue
+		}
+		bodyLower := strings.ToLower(strings.TrimSpace(body))
+		if strings.HasPrefix(bodyLower, "<!doctype") || strings.HasPrefix(bodyLower, "<html") {
+			continue
+		}
+
+		// Parse JSON for known endpoint keys
+		var doc map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &doc); err != nil {
+			continue
+		}
+
+		oidcKeys := []string{
+			"authorization_endpoint", "token_endpoint", "userinfo_endpoint",
+			"jwks_uri", "revocation_endpoint", "introspection_endpoint",
+			"end_session_endpoint", "registration_endpoint",
+		}
+		var extracted []string
+		for _, key := range oidcKeys {
+			if v, ok := doc[key].(string); ok && v != "" {
+				extracted = append(extracted, fmt.Sprintf("  %s: %s", key, v))
+				found = append(found, fmt.Sprintf("%s  [from %s]", v, p))
+			}
+		}
+
+		if len(extracted) > 0 {
+			logInfo("  auth: %s — OIDC/OAuth config found at %s (%d endpoints)", host, p, len(extracted))
+			s.Report.AddFinding(Finding{
+				Tool:     "curl",
+				Host:     host,
+				Category: "Auth Surface",
+				Title:    fmt.Sprintf("OIDC/OAuth configuration discovered at %s", p),
+				Detail:   fmt.Sprintf("Endpoints extracted:\n%s", strings.Join(extracted, "\n")),
+				Severity: SevInfo,
+			})
+		}
+	}
+
+	if len(found) == 0 {
+		return
+	}
+
+	logInfo("  auth: %d auth surface entries found for %s", len(found), host)
+	header := fmt.Sprintf("# Auth Surface — %s\n# Login, auth, OAuth, and OIDC endpoints\n\n", host)
+	_ = os.WriteFile(outFile, []byte(header+strings.Join(found, "\n")+"\n"), 0644)
+
+	var urls []string
+	for _, line := range found {
+		if parts := strings.Fields(line); len(parts) > 0 {
+			urls = append(urls, parts[0])
+		}
+	}
+	_ = writeDiscoveredEndpoints(s.EngDir, urls)
+}
+
+// ---- API surface enumeration ------------------------------------------------
+
+// apiProbePaths are the paths probed on every live HTTP host. A 200 or 401
+// response indicates the path exists — 401 is included because protected API
+// roots still confirm the surface is present.
+var apiProbePaths = []string{
+	"/api", "/api/v1", "/api/v2", "/api/v3",
+	"/rest", "/rest/v1", "/rest/v2",
+	"/v1", "/v2", "/v3",
+	"/graphql", "/graphiql", "/playground",
+	"/swagger", "/swagger.json", "/swagger.yaml",
+	"/swagger-ui.html", "/swagger-ui/",
+	"/api-docs", "/api-docs.json",
+	"/openapi.json", "/openapi.yaml", "/openapi/",
+	"/docs", "/redoc",
+}
+
+// swaggerPathFields are the JSON keys in an OpenAPI/Swagger spec that contain
+// endpoint path definitions.
+var reSwaggerPath = regexp.MustCompile(`"(/[^"]+)"\s*:\s*\{`)
+
+// graphqlIntrospectionQuery is the minimal query used to detect a live
+// GraphQL endpoint. It requests only __typename which every compliant
+// implementation must return, minimising server-side cost.
+const graphqlIntrospectionQuery = `{"query":"{__typename}"}`
+
+// runAPISurface probes a host for API roots, OpenAPI/Swagger documentation,
+// and GraphQL endpoints. Discovered endpoints are appended to discovered_endpoints
+// and written to other/api_endpoints_<host>.txt.
+func runAPISurface(r *Runner, s *RunState, host, otherDir string) {
+	safe := sanitizeForFilename(host)
+	base := strings.TrimRight(host, "/")
+	outFile := filepath.Join(otherDir, "api_endpoints_"+safe+".txt")
+
+	var found []string
+	var graphqlEndpoints []string
+
+	proxyArgs := proxyFlagForTool("curl", s.Cfg.ProxyURL)
+
+	for _, p := range apiProbePaths {
+		url := base + p
+
+		// Use -o /dev/null -w "%{http_code}" to get only the status code
+		stdout, res := r.RunWithOutput("curl", "curl", append([]string{
+			"-s", "-o", "/dev/null", "-w", "%{http_code}",
+			"-m", "10", "-L", "--max-redirs", "3", url,
+		}, proxyArgs...))
+		if res.Skipped || res.Err != nil {
+			continue
+		}
+		code := strings.TrimSpace(stdout)
+		if code != "200" && code != "401" && code != "403" {
+			continue
+		}
+
+		found = append(found, fmt.Sprintf("%s  [HTTP %s]", url, code))
+
+		// If it looks like a Swagger/OpenAPI spec, fetch and parse it
+		if code == "200" && (strings.HasSuffix(p, ".json") || strings.HasSuffix(p, ".yaml") ||
+			strings.Contains(p, "swagger") || strings.Contains(p, "openapi") || strings.Contains(p, "api-docs")) {
+			body, res2 := r.RunWithOutput("curl", "curl", append([]string{
+				"-s", "-m", "15", "-L", "--max-redirs", "3", url,
+			}, proxyArgs...))
+			if res2.Skipped || res2.Err != nil {
+				continue
+			}
+			paths := reSwaggerPath.FindAllStringSubmatch(body, -1)
+			for _, m := range paths {
+				ep := base + m[1]
+				found = append(found, fmt.Sprintf("%s  [from OpenAPI spec]", ep))
+			}
+			if len(paths) > 0 {
+				logInfo("  api: %s — %d endpoints extracted from OpenAPI spec at %s", host, len(paths), p)
+			}
+		}
+
+		// Track GraphQL paths for introspection
+		if strings.Contains(p, "graphql") || strings.Contains(p, "graphiql") || strings.Contains(p, "playground") {
+			if code == "200" || code == "400" {
+				graphqlEndpoints = append(graphqlEndpoints, url)
+			}
+		}
+	}
+
+	// GraphQL introspection — POST {__typename} to confirm endpoint is live
+	for _, gqlURL := range graphqlEndpoints {
+		stdout, res := r.RunWithOutput("curl", "curl", append([]string{
+			"-s", "-m", "10", "-X", "POST",
+			"-H", "Content-Type: application/json",
+			"-d", graphqlIntrospectionQuery,
+			gqlURL,
+		}, proxyArgs...))
+		if res.Skipped || res.Err != nil {
+			continue
+		}
+		if strings.Contains(stdout, `"data"`) && strings.Contains(stdout, `__typename`) {
+			s.Report.AddFinding(Finding{
+				Tool:     "curl",
+				Host:     host,
+				Category: "API Surface",
+				Title:    "GraphQL endpoint identified",
+				Detail:   fmt.Sprintf("Endpoint: %s — responds to {__typename} introspection. Verify whether full schema introspection is enabled (should be disabled in production).", gqlURL),
+				Severity: SevInfo,
+			})
+			logInfo("  api: GraphQL endpoint confirmed at %s", gqlURL)
+		}
+	}
+
+	if len(found) == 0 {
+		return
+	}
+
+	logInfo("  api: %d API surface entries found for %s", len(found), host)
+	header := fmt.Sprintf("# API Surface — %s\n# Paths returning HTTP 200/401/403 or extracted from OpenAPI specs\n\n", host)
+	_ = os.WriteFile(outFile, []byte(header+strings.Join(found, "\n")+"\n"), 0644)
+
+	// Extract just the URLs (strip the annotation) for discovered_endpoints
+	var urls []string
+	for _, line := range found {
+		if parts := strings.Fields(line); len(parts) > 0 {
+			urls = append(urls, parts[0])
+		}
+	}
+	_ = writeDiscoveredEndpoints(s.EngDir, urls)
+}
+
+// ---- SSRF / open redirect surface mapping -----------------------------------
+
+var ssrfParamNames = map[string]struct{}{
+	"url": {}, "uri": {}, "path": {}, "dest": {}, "destination": {},
+	"target": {}, "proxy": {}, "host": {}, "endpoint": {}, "redirect_to": {},
+	"callback": {}, "webhook": {}, "fetch": {}, "load": {}, "source": {},
+	"src": {}, "img": {}, "image": {}, "file": {}, "document": {},
+	"page": {}, "feed": {}, "data": {}, "resource": {}, "link": {},
+}
+
+var redirectParamNames = map[string]struct{}{
+	"redirect": {}, "return": {}, "next": {}, "continue": {}, "goto": {},
+	"back": {}, "redir": {}, "returnurl": {}, "returnto": {}, "successurl": {},
+	"failurl": {}, "cancelurl": {}, "forward": {}, "location": {}, "ref": {},
+	"referrer": {}, "url": {}, "to": {},
+}
+
+// reURLParam matches query-string parameter names from a URL.
+var reURLParam = regexp.MustCompile(`[?&]([^=&#+]+)=`)
+
+// buildSSRFSurface walks discovered_endpoints and arjun output files looking
+// for parameter names that match known SSRF or open redirect patterns. Matching
+// URLs are written to other/ssrf_surface.txt and other/redirect_surface.txt.
+// No HTTP requests are made — this is purely string matching on existing data.
+func buildSSRFSurface(engDir, otherDir string) {
+	endpoints, _ := readLines(filepath.Join(engDir, "discovered_endpoints"))
+
+	// Also pull in arjun output (JSON: map of url -> []param)
+	arjunFiles, _ := filepath.Glob(filepath.Join(otherDir, "arjun_*.json"))
+	for _, f := range arjunFiles {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		var arjun map[string][]string
+		if err := json.Unmarshal(data, &arjun); err != nil {
+			continue
+		}
+		for u, params := range arjun {
+			for _, p := range params {
+				endpoints = append(endpoints, fmt.Sprintf("%s?%s=", u, p))
+			}
+		}
+	}
+
+	var ssrf, redirect []string
+	seenS := make(map[string]struct{})
+	seenR := make(map[string]struct{})
+
+	for _, ep := range endpoints {
+		for _, m := range reURLParam.FindAllStringSubmatch(ep, -1) {
+			param := strings.ToLower(m[1])
+			if _, ok := ssrfParamNames[param]; ok {
+				key := ep + "|" + param
+				if _, seen := seenS[key]; !seen {
+					seenS[key] = struct{}{}
+					ssrf = append(ssrf, fmt.Sprintf("%s  [param: %s]", ep, m[1]))
+				}
+			}
+			if _, ok := redirectParamNames[param]; ok {
+				key := ep + "|" + param
+				if _, seen := seenR[key]; !seen {
+					seenR[key] = struct{}{}
+					redirect = append(redirect, fmt.Sprintf("%s  [param: %s]", ep, m[1]))
+				}
+			}
+		}
+	}
+
+	if len(ssrf) > 0 {
+		header := "# SSRF Surface — candidate endpoints with URL-accepting parameters\n" +
+			"# These are surface maps only. No payloads have been sent.\n\n"
+		_ = os.WriteFile(filepath.Join(otherDir, "ssrf_surface.txt"),
+			[]byte(header+strings.Join(ssrf, "\n")+"\n"), 0644)
+		logInfo("  surface: %d SSRF candidate parameters written to other/ssrf_surface.txt", len(ssrf))
+	}
+	if len(redirect) > 0 {
+		header := "# Open Redirect Surface — candidate endpoints with redirect-accepting parameters\n" +
+			"# These are surface maps only. No payloads have been sent.\n\n"
+		_ = os.WriteFile(filepath.Join(otherDir, "redirect_surface.txt"),
+			[]byte(header+strings.Join(redirect, "\n")+"\n"), 0644)
+		logInfo("  surface: %d open redirect candidate parameters written to other/redirect_surface.txt", len(redirect))
+	}
+}
+
+// ---- rate limit summary -----------------------------------------------------
+
+// writeRateLimitSummary writes a human-readable summary of observed (or absent)
+// rate limiting headers to other/ratelimit_<host>.txt.
+func writeRateLimitSummary(sh *SecurityHeaders, otherDir string) {
+	safe := sanitizeForFilename(sh.Host)
+	path := filepath.Join(otherDir, "ratelimit_"+safe+".txt")
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Rate Limit Surface — %s\n\n", sh.Host)
+	if sh.HasRateLimit {
+		fmt.Fprintln(&b, "Rate limiting headers present:")
+		for k, v := range sh.RateLimitHeaders {
+			fmt.Fprintf(&b, "  %s: %s\n", k, v)
+		}
+	} else {
+		fmt.Fprintln(&b, "No rate limiting headers observed in response.")
+		fmt.Fprintln(&b, "Verify manually whether rate limiting is enforced at the application or infrastructure layer.")
+	}
+	_ = os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+// ---- well-known URL fetching -----------------------------------------------
+
+// runWellKnown fetches robots.txt, sitemap.xml, sitemap_index.xml, and
+// security.txt for a host. Discovered paths/URLs are appended to
+// discovered_endpoints. Raw responses are written to other/wellknown_<host>.txt.
+func runWellKnown(r *Runner, s *RunState, host, otherDir string) {
+	safe := sanitizeForFilename(host)
+	outFile := filepath.Join(otherDir, "wellknown_"+safe+".txt")
+	base := strings.TrimRight(host, "/")
+
+	paths := []string{
+		"/robots.txt",
+		"/sitemap.xml",
+		"/sitemap_index.xml",
+		"/.well-known/security.txt",
+		"/.well-known/change-password",
+	}
+
+	var allContent strings.Builder
+	var allEndpoints []string
+
+	for _, p := range paths {
+		url := base + p
+		stdout, res := r.RunWithOutput("curl", "curl", append([]string{
+			"-s", "-L", "-m", "10", "--max-redirs", "3",
+			"-H", "Accept: text/plain,text/xml,application/xml,*/*",
+			url,
+		}, proxyFlagForTool("curl", s.Cfg.ProxyURL)...))
+		if res.Skipped || res.Err != nil || strings.TrimSpace(stdout) == "" {
+			continue
+		}
+		// Skip obvious error pages (HTML where plain text is expected)
+		bodyLower := strings.ToLower(strings.TrimSpace(stdout))
+		if strings.HasPrefix(bodyLower, "<!doctype") || strings.HasPrefix(bodyLower, "<html") {
+			continue
+		}
+
+		fmt.Fprintf(&allContent, "### %s\n\n%s\n\n", url, stdout)
+
+		switch {
+		case strings.HasSuffix(p, "robots.txt"):
+			endpoints := ParseRobotsTxt(stdout, base)
+			allEndpoints = append(allEndpoints, endpoints...)
+			if len(endpoints) > 0 {
+				logInfo("  wellknown: %s — %d paths from robots.txt", host, len(endpoints))
+			}
+		case strings.Contains(p, "sitemap"):
+			endpoints := ParseSitemapXML(stdout)
+			allEndpoints = append(allEndpoints, endpoints...)
+			if len(endpoints) > 0 {
+				logInfo("  wellknown: %s — %d URLs from %s", host, len(endpoints), p)
+			}
+		}
+	}
+
+	if allContent.Len() == 0 {
+		return
+	}
+
+	_ = os.WriteFile(outFile, []byte(allContent.String()), 0644)
+
+	if len(allEndpoints) > 0 {
+		_ = writeDiscoveredEndpoints(s.EngDir, allEndpoints)
 	}
 }
 

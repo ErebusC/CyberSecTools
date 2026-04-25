@@ -768,6 +768,8 @@ type SecurityHeaders struct {
 	XPoweredByHeader     string
 	HSTSValue            string
 	HSTSMaxAge           int
+	RateLimitHeaders     map[string]string // present rate-limit headers and their values
+	HasRateLimit         bool              // true if any rate-limit header was observed
 }
 
 var (
@@ -851,6 +853,26 @@ func ParseSecurityHeaders(path, host string) (*SecurityHeaders, []Finding, error
 		sh.XPoweredByHeader = v
 	}
 
+	// Rate limiting headers.
+	rateLimitHeaderNames := []string{
+		"x-ratelimit-limit",
+		"x-ratelimit-remaining",
+		"x-ratelimit-reset",
+		"x-ratelimit-retry-after",
+		"ratelimit-limit",
+		"ratelimit-remaining",
+		"ratelimit-reset",
+		"ratelimit-policy",
+		"retry-after",
+	}
+	sh.RateLimitHeaders = make(map[string]string)
+	for _, h := range rateLimitHeaderNames {
+		if v, ok := present[h]; ok {
+			sh.RateLimitHeaders[h] = v
+			sh.HasRateLimit = true
+		}
+	}
+
 	// Cookie attribute checks.
 	for _, cookie := range cookieLines {
 		lower := strings.ToLower(cookie)
@@ -913,6 +935,17 @@ func ParseSecurityHeaders(path, host string) (*SecurityHeaders, []Finding, error
 			Category: "Information Disclosure",
 			Title:    "X-Powered-By header present",
 			Detail:   fmt.Sprintf("X-Powered-By: %s", sh.XPoweredByHeader),
+			Severity: SevInfo,
+		})
+	}
+
+	if !sh.HasRateLimit {
+		findings = append(findings, Finding{
+			Tool:     "curl",
+			Host:     host,
+			Category: "Rate Limiting",
+			Title:    "No rate limiting headers observed",
+			Detail:   "No X-RateLimit-* or RateLimit-* headers present — verify manually whether rate limiting is enforced at the application or infrastructure layer",
 			Severity: SevInfo,
 		})
 	}
@@ -1308,4 +1341,65 @@ func parseGitdorkResults(output, domain, keyword string) []Finding {
 		})
 	}
 	return findings
+}
+
+// ---- robots.txt / sitemap --------------------------------------------------
+
+// ParseRobotsTxt parses robots.txt content and returns the full URLs implied by
+// every Disallow and Allow directive, using baseURL as the scheme+host prefix.
+// Paths that are just "/" or empty are skipped — they are not useful as endpoints.
+func ParseRobotsTxt(content, baseURL string) []string {
+	base := strings.TrimRight(baseURL, "/")
+	seen := make(map[string]struct{})
+	var urls []string
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		var path string
+		switch {
+		case strings.HasPrefix(strings.ToLower(line), "disallow:"):
+			path = strings.TrimSpace(line[len("disallow:"):])
+		case strings.HasPrefix(strings.ToLower(line), "allow:"):
+			path = strings.TrimSpace(line[len("allow:"):])
+		default:
+			continue
+		}
+		// Strip inline comments
+		if i := strings.Index(path, "#"); i >= 0 {
+			path = strings.TrimSpace(path[:i])
+		}
+		if path == "" || path == "/" {
+			continue
+		}
+		// Wildcard patterns are useful as-is for the tester but not routable URLs
+		if strings.ContainsAny(path, "*?") {
+			continue
+		}
+		full := base + path
+		if _, ok := seen[full]; !ok {
+			seen[full] = struct{}{}
+			urls = append(urls, full)
+		}
+	}
+	return urls
+}
+
+// ParseSitemapXML extracts all <loc> URL values from a sitemap or sitemap index
+// document. Works for both sitemap.xml and sitemap_index.xml formats.
+func ParseSitemapXML(content string) []string {
+	var urls []string
+	seen := make(map[string]struct{})
+
+	// Simple regex extraction — avoids a full XML parse that can choke on
+	// malformed sitemaps, which are surprisingly common.
+	reLoc := regexp.MustCompile(`(?i)<loc>\s*(https?://[^\s<]+)\s*</loc>`)
+	for _, m := range reLoc.FindAllStringSubmatch(content, -1) {
+		u := strings.TrimSpace(m[1])
+		if _, ok := seen[u]; !ok {
+			seen[u] = struct{}{}
+			urls = append(urls, u)
+		}
+	}
+	return urls
 }

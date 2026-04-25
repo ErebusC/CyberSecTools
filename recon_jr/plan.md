@@ -2,9 +2,30 @@
 
 ## Overview
 
-recon_jr is a sequential web application recon orchestration tool written in Go. It picks up where engage_jr leaves off: given an engagement directory, it runs a defined suite of recon tools in order, processes their output, makes decisions based on what it finds, and produces a final `recon_report.md` summarising all tool findings. The goal is to eliminate the manual, repetitive groundwork at the start of every web app test so that time is spent on the parts that actually require a human.
+recon_jr is a sequential recon orchestration tool written in Go. It operates in two distinct modes:
 
-It does not run tools concurrently against the target. Tools run in sequence. This is intentional — it keeps traffic predictable, avoids tripping rate limiting or WAFs prematurely, makes output easier to correlate, and reduces the risk of causing service disruption on production systems. These tools will regularly run against live production infrastructure, which shapes every decision about how aggressively the tool operates.
+- **Web mode** (default): web application penetration test recon — subdomain enumeration, HTTP probing, infrastructure scanning, content discovery, vulnerability scanning, secrets analysis, and security headers. Seven phases, producing `recon_report.md` and `recon_overview.md`.
+- **Infra mode** (`-mode infra`): broad internal/external infrastructure enumeration — ASN and IP range discovery, host sweep, full-port service scanning, service-specific protocol enumeration (SMB, LDAP, SNMP, RPC, Kerberos), and vulnerability assessment across whatever is alive. Built for network and infrastructure assessments where the scope is an IP range, ASN, or org name rather than a specific web application.
+
+Both modes integrate with engage_jr engagement directories and share the same config, scope enforcement, production safety controls, and reporting pipeline. The mode is set at runtime; the engagement directory structure is the same in both cases.
+
+Tools run sequentially within each phase. This is intentional — it keeps traffic predictable, avoids tripping rate limiting or IDS/IPS prematurely, makes output easier to correlate, and reduces the risk of causing service disruption on production systems.
+
+---
+
+## Recon Boundary
+
+recon_jr is a reconnaissance tool. Its job is to identify and document the attack surface so that the operator can make informed decisions about what to test manually. It does not cross the line into exploitation under any circumstances, in either mode, with any combination of flags.
+
+Concretely, this means:
+
+- **No exploit execution.** Tools are invoked with flags that perform detection and enumeration only. nuclei excludes `exploit`, `dos`, and `fuzz` tags regardless of what templates are installed locally. nmap NSE scripts are limited to those that probe and identify — not those that manipulate or exploit.
+- **No credential brute forcing.** kerbrute is run in `userenum` mode only — it determines whether a username is valid, it does not try passwords. SNMP community string checks are limited to the two most common defaults (`public`, `private`). nuclei `default-logins` templates check a single known default credential pair per service (e.g., `admin:admin` on Tomcat manager) — they are not iterating a password list.
+- **No data extraction.** Tools that read from services (SNMP walk, anonymous LDAP bind, SMB share listing) record what is *accessible* and *what that implies about security posture*. They do not copy files, read database contents, or retrieve data beyond what is needed to confirm the finding.
+- **No write operations.** Nothing is written to, modified on, or sent to target systems beyond the network probes required to enumerate them. Cloud storage probes use HEAD requests only. No files are uploaded. No registrations are made.
+- **Findings are surface maps, not attack chains.** The output of this tool tells the operator: "this exists, this is accessible, this looks misconfigured." What happens next is a human decision made deliberately, with authorisation confirmed, outside this tool.
+
+---
 
 ---
 
@@ -14,17 +35,17 @@ recon_jr is designed to operate inside an existing engage_jr engagement director
 
 **Discovery:** When invoked without an explicit path, recon_jr walks up from the current directory looking for `.engage.json`. If found, it reads engagement name, mode, host count, and creation date without requiring the user to re-specify them. An explicit `-dir` flag overrides this for cases where it is invoked from outside the engagement directory.
 
-**Host files:** engage_jr already produces `hosts`, `http_hosts`, and `nohttp_hosts` in the engagement root. recon_jr reads these directly rather than re-parsing a host file. The `http_hosts` file feeds tools that expect URLs; `nohttp_hosts` feeds tools that expect bare hostnames or IPs; `hosts` feeds everything else.
+**Host files:** engage_jr already produces `hosts`, `http_hosts`, and `nohttp_hosts` in the engagement root. recon_jr reads these directly. In infra mode the `hosts` file may contain CIDR ranges, IP ranges, and ASNs in addition to hostnames; the host expansion logic handles this before scanning begins.
 
-**Directory structure:** recon_jr writes its output into the existing subdirectory layout. Tool output goes into named subdirs that map to what engage_jr created — nmap output to `nmap/`, Nessus-related output to `nessus/`. All other recon tool output (feroxbuster, nuclei, katana, subfinder, httpx, testssl, gowitness, etc.) is written into `other/` under tool-named subdirectories. This keeps the layout consistent with what engage_jr creates without requiring any changes to `work_dirs`. The `other/` directory becomes the primary recon output location.
+**Directory structure:** recon_jr writes its output into the existing subdirectory layout. Tool output goes into named subdirs — nmap output to `nmap/`, Nessus-related output to `nessus/`. All other tool output is written into `other/`. In infra mode, additional subdirectories are created: `smb/`, `ldap/`, `snmp/`, `services/`. This keeps the layout consistent with what engage_jr creates.
 
-**Metadata:** On completion, recon_jr writes `.recon.json` into the engagement root alongside `.engage.json`. This records which tools ran, when, what they found at a summary level, and whether the run completed successfully. This allows `-list` style functionality to be added later, and provides a record if recon_jr is run again on the same engagement.
+**Metadata:** On completion, recon_jr writes `.recon.json` into the engagement root alongside `.engage.json`. This records the mode that was run, which phases completed, what was found at a summary level, and whether the run completed. Interrupted runs are resumable via `-from-phase`.
 
-**Config link:** recon_jr uses its own config file at `~/.config/recon_jr/config.json` but shares the same layered precedence pattern as engage_jr (defaults → config file → env vars → CLI flags). The Nessus host, port, and credentials live here. API keys are never written to the engagement directory.
+**Config link:** recon_jr uses its own config file at `~/.config/recon_jr/config.json`. The Nessus host, port, and credentials live here. API keys are never written to the engagement directory.
 
 ---
 
-## Tool Orchestration
+## Web Mode — Tool Orchestration
 
 Tools run in phases. Each phase feeds into the next. Conditional tools only run when the preceding phase surfaces evidence that justifies them.
 
@@ -34,391 +55,566 @@ Runs against the root domains identified from the host file. Produces an expande
 
 | Tool | Purpose | Output |
 |---|---|---|
-| `dig` | DNS record enumeration (A, MX, TXT, NS, CNAME, SOA) | Per-host text, parsed |
-| `dnsx` | Bulk resolution of discovered subdomains | Resolved host list |
+| `dig` | DNS record enumeration (A, MX, TXT, NS, CNAME, SOA, AXFR attempt) + SPF/DMARC/CAA | Per-domain findings |
 | `subfinder` | Passive subdomain enumeration via public sources | Subdomain list |
-| `theHarvester` | OSINT — emails, subdomains, hosts from search engines | Subdomain and email list |
+| `theHarvester` | OSINT — emails, subdomains from search engines | Subdomain + email list |
 | crt.sh API | Certificate transparency log query | Subdomain list |
+| `dnsx` | Bulk resolution of discovered subdomains | Resolved host list |
 
 All subdomain results are deduplicated and merged into a single `discovered_hosts` list. This list, combined with the original `hosts` file, forms the master host list for Phase 2.
 
-**Decision logic:** If `dig` returns a successful AXFR (zone transfer), record it in `recon_report.md` as a notable finding — DNS Zone Transfer Permitted. If wildcard DNS is detected (`*.domain.com` resolving), flag it in the recon metadata; it affects how subdomain enumeration results should be interpreted and will suppress false positives in later phases.
-
-`theHarvester` output: email addresses are written to `other/theharvester_emails.txt`. Discovered subdomains are merged into `discovered_hosts` alongside subfinder and crt.sh output.
+**Decision logic:** If `dig` returns a successful AXFR, record it in `recon_report.md` as a notable finding — DNS Zone Transfer Permitted. If wildcard DNS is detected, flag it in recon metadata.
 
 ### Phase 2 — Host Probing and Fingerprinting
 
-Runs against the full master host list from Phase 1. Determines what is actually alive and what is running before any active scanning begins.
-
 | Tool | Purpose | Output |
 |---|---|---|
-| `naabu` | Fast TCP port sweep across all hosts | Open port list per host |
-| `httpx` | Probes HTTP/HTTPS on discovered ports; grabs title, status, tech stack, redirects, TLS info | JSON per host |
+| `httpx` | Probes HTTP/HTTPS; grabs title, status, tech stack, redirects, TLS info | JSON per host |
 | `whatweb` | Deep technology fingerprinting | JSON per host |
 | `wafw00f` | WAF detection | Per-host WAF name or none |
 | `gowitness` | Screenshots of all live HTTP services | PNG per URL |
+| `ffuf` | Virtual host discovery per root domain | JSON per domain |
 
-**Decision logic:**
-
-- `httpx` status codes feed the crawling and discovery phase. `401`/`403` responses are noted but crawling is not attempted. `200` and `30x` chains are followed.
-- `whatweb` and `httpx` combined determine which CMS-specific scanners run in Phase 4.
-- If `wafw00f` detects a WAF, this is recorded in recon metadata and noted in `recon_report.md` — findings that a WAF might partially mitigate should note this.
-- Software versions surfaced by `whatweb` are checked against a known-vulnerable version list. Outdated software with known CVEs is recorded in `recon_report.md` under the Outdated Software section.
+**Decision logic:** `whatweb` and `httpx` combined determine which CMS-specific scanners run in Phase 5. If `wafw00f` detects a WAF, this is recorded in recon metadata. Virtual hosts discovered by ffuf are added to the master host list.
 
 ### Phase 3 — Infrastructure Scanning
 
 | Tool | Purpose | Output |
 |---|---|---|
-| `nmap` | Service and version detection on ports identified by naabu; NSE scripts for HTTP services | XML, parsed |
-| `testssl.sh` | TLS configuration audit | JSON |
-| Nessus API | Full credentialed or uncredentialed scan triggered via API; results polled and fetched | JSON |
+| `nmap` | Two-pass TCP: fast full-port sweep → service/version + NSE on open ports | XML + nmap + gnmap |
+| `nmap` (UDP) | Top-20 UDP ports | XML + nmap + gnmap |
+| `testssl.sh` | TLS configuration audit | JSON per HTTPS host |
+| Nessus API | Full scan triggered via API; results polled and fetched | JSON |
 
-**Decision logic — testssl:**
+**nmap output naming:** `nmap_tcp-fullports_<host>.*`, `nmap_tcp-svc_<host>.*`, `nmap_udp-top20_<host>.*`
 
-Record in `recon_report.md`: expired certificates, self-signed certificates, certificates with mismatched hostnames, SSLv2/SSLv3/TLS 1.0/TLS 1.1 enabled, weak cipher suites (RC4, DES, 3DES, EXPORT, NULL, anon), BEAST, POODLE, DROWN, ROBOT, HEARTBLEED, missing HSTS, HSTS max-age below 180 days, missing certificate transparency.
+**Decision logic — nmap:** Record in `recon_report.md` any unexpected open port not in the defined scope ports. Unexpected management interfaces (RDP, SSH, SNMP, Telnet, FTP, SMB) on internet-facing hosts are always noted.
 
-Do not include in report: informational notes about cipher order preference, minor TLS 1.2 configuration points that do not constitute a vulnerability.
+**Decision logic — testssl:** Record expired/self-signed certs, TLS 1.0/1.1, SSLv2/3, weak ciphers, BEAST/POODLE/DROWN/HEARTBLEED/ROBOT. Suppress informational notes.
 
-**Decision logic — Nessus:**
-
-All Critical and High findings are included in `recon_report.md`. Medium findings are filtered: include mediums that correspond to known impactful issues (default credentials, dangerous HTTP methods, outdated software with exploit code available). Suppress mediums that are informational re-statements of configuration (e.g. "SSL certificate cannot be trusted" when a testssl finding already covers it — dedup by CVE/plugin ID). Do not include Lows or Informationals in the report automatically; write them to `nessus/nessus_low_info.json` for manual review.
-
-**Nessus is optional.** If `nessus_access_key` or `nessus_secret_key` are empty in config, the Nessus scan is skipped silently (logged: "Nessus skipped — no API credentials configured") and Phase 3 continues with nmap + testssl only. The `-no-nessus` CLI flag also skips it regardless of config. `.recon.json` records `"nessus_skipped": true` and `"nessus_skip_reason"` when skipped. The preflight check warns on missing Nessus credentials but does not fail.
-
-**Decision logic — nmap:**
-
-Record in `recon_report.md` any unexpected open port that is not in the defined scope ports (80, 443, and any ports explicitly listed in scope). Unexpected management interfaces (RDP, SSH, SNMP, Telnet, FTP, SMB) on internet-facing hosts are always noted.
+**Decision logic — Nessus:** All Critical and High findings in the report. Mediums filtered — include if they correspond to default credentials, dangerous HTTP methods, or exploitable outdated software. Lows/Infos written to `nessus_low_info.json` for manual review. Nessus is optional; skipped silently if credentials absent.
 
 ### Phase 4 — Web Content Discovery and Crawling
 
-Runs per live HTTP host identified in Phase 2.
+| Tool | Purpose | Output |
+|---|---|---|
+| `katana` | Active crawl — follows links, parses JS for URLs | URL list per host |
+| `waybackurls` / `gau` | Historical URL harvesting | URL list per domain |
+| `feroxbuster` | Directory and content brute-force | JSON per host |
+| `arjun`* | Hidden parameter discovery on crawled endpoints | JSON per host |
+
+`*` = requires `-allow-intrusive`
+
+**Decision logic — feroxbuster:** Record `.git` directory, `.env` files, backup extensions (`.bak`, `.old`, `.zip`, `.tar`, `.sql`), `phpinfo.php`, `server-status`, `server-info`, `web.config`.
+
+### Phase 5 — Known Vulnerability Identification
 
 | Tool | Purpose | Output |
 |---|---|---|
-| `katana` | Active crawl — follows links, discovers endpoints, parses JS for URLs | JSON endpoint list |
-| `waybackurls` / `gau` | Historical URL harvesting from Wayback Machine and other sources | URL list |
-| `feroxbuster` | Directory and content brute-force using wordlist | JSON |
-| `arjun` | Hidden parameter discovery on crawled endpoints | JSON |
+| `nuclei` | Template-based detection across crawled URLs — identifies known misconfigurations and CVEs | JSON |
+| `nikto`* | Web server misconfiguration and version detection | Text per host |
+| `wpscan`* | WordPress plugin/theme/core version identification (conditional on Phase 2 detection) | JSON |
+| `joomscan`* | Joomla version and component identification (conditional) | Text |
+| `droopescan`* | Drupal/SilverStripe version identification (conditional) | JSON |
 
-**Decision logic — feroxbuster:**
+`*` = requires `-allow-intrusive`
 
-Record in `recon_report.md`: `.git` directory accessible (Directory Listing / Source Code Disclosure), `.env` files returning `200`, backup file extensions (`.bak`, `.old`, `.zip`, `.tar`, `.sql`) returning `200`, admin panel paths returning `200` or `302` to an authentication page (note location, do not flag as confirmed finding unless unauthenticated access is confirmed), configuration files (`web.config`, `phpinfo.php`, `server-status`, `server-info`) returning `200`.
-
-Do not include in report: standard `404` paths, redirects to login pages without further context, directory listings on paths explicitly marked public.
-
-**Decision logic — arjun:**
-
-Output is written to `other/arjun/` for manual review. Arjun findings are not included in the automated report; they feed into manual testing. The endpoint list is appended to a master `discovered_endpoints` file that is used as a reference during the manual test.
-
-### Phase 5 — Vulnerability Scanning
-
-| Tool | Purpose | Output |
-|---|---|---|
-| `nuclei` | Template-based scanning across crawled URLs and discovered endpoints | JSON |
-| `nikto` | Legacy web server scanner — noisy but occasionally finds things nuclei misses | Text, parsed |
-| `wpscan` | WordPress-specific scanning (conditional on Phase 2 detection) | JSON |
-| `joomscan` | Joomla-specific scanning (conditional) | Text, parsed |
-| `droopescan` | Drupal/SilverStripe detection (conditional) | JSON |
-
-**Decision logic — nuclei:**
-
-Run with `critical`, `high`, and `medium` severity tags. Critical and High findings are included in `recon_report.md`. Medium findings are filtered — suppress findings that duplicate what Nessus or testssl already found. Do not run `info` or `low` templates automatically; these produce too much noise. The nuclei template list should be pinned to a specific version to avoid unexpected behaviour between engagements.
-
-**Decision logic — nikto:**
-
-nikto output is parsed for specific finding codes. Record in `recon_report.md`: exposed server version headers (if not already noted), dangerous HTTP methods (PUT, DELETE, TRACE — TRACE noted as XST risk), directory indexing enabled, server-side includes enabled, outdated software with version confirmed. Suppress: generic "the anti-clickjacking X-Frame-Options header is not present" (covered by security headers section instead), anything with a confidence qualifier of "may be interesting" without a confirmed status code.
-
-**Decision logic — CMS scanners:**
-
-wpscan, joomscan, droopescan only execute if the relevant CMS was identified in Phase 2. Their output is written to `other/cms/` and parsed for: known plugin/theme CVEs (record in report), outdated core version (record in report under Outdated Software), user enumeration confirmed (record in report), XML-RPC enabled (note if not needed per scope clarification).
+nuclei is invoked with `--exclude-tags exploit,dos,fuzz` in all cases. Templates identify whether a vulnerability condition is present — they do not deliver payloads or trigger code execution on the target.
 
 ### Phase 6 — JavaScript and Secrets Analysis
 
-Runs against JS files discovered during crawling.
-
 | Tool | Purpose | Output |
 |---|---|---|
-| `subjs` / `getJS` | Pulls all JS file URLs from crawled pages | URL list |
-| `linkfinder` | Extracts endpoints and paths from JS source | Endpoint list |
-| `trufflehog` / `gitleaks` | Scans JS content and any exposed `.git` repos for secrets | JSON |
+| `subjs` | Extracts JS file URLs from crawled pages | URL list |
+| `linkfinder` | Extracts endpoints from JS source | Endpoint list |
+| `gitleaks` | Secrets scanning on filesystem and JS content | JSON |
+| `trufflehog` | Secrets scanner — filesystem + GitHub org scan | JSON |
+| `gh search` | GitHub code search for target domain + sensitive keywords | JSON |
 
-**Decision logic:**
+Source map detection (`.map` files alongside `.js` URLs) runs as part of this phase.
 
-trufflehog/gitleaks findings that confirm a secret (API key, private key, password, token) are always recorded in `recon_report.md` as critical findings. Findings with `verified: false` are written to `other/secrets_unverified.json` for manual review and are not included in the automated report. Endpoints found by linkfinder are appended to the master `discovered_endpoints` file.
+**Decision logic:** Verified secrets → `recon_report.md` as Critical. Unverified → `secrets_unverified.json` for manual review. linkfinder endpoints appended to `discovered_endpoints`.
 
-### Phase 7 — Security Headers and Exposure
+### Phase 7 — Security Headers and HTTP Exposure
 
 | Tool | Purpose |
 |---|---|
-| `curl` with structured parsing | Captures response headers from all live HTTP hosts |
+| `curl` | Captures response headers from all live HTTP hosts |
+| HTTP OPTIONS | Detects dangerous methods (PUT, DELETE, TRACE, CONNECT, TRACK) |
+| CORS probe | Tests arbitrary origin reflection + credentials header |
 
-Parse for: missing `Strict-Transport-Security`, missing `Content-Security-Policy`, missing `X-Frame-Options` or `frame-ancestors` CSP directive, missing `X-Content-Type-Options`, `Referrer-Policy` absent or permissive, `Permissions-Policy` absent, `Server` header disclosing version, `X-Powered-By` present, cookies without `Secure`, `HttpOnly`, or `SameSite` attributes.
+Parse for: missing HSTS/CSP/X-Frame-Options/X-Content-Type-Options/Referrer-Policy/Permissions-Policy, HSTS max-age below 180 days, Server/X-Powered-By headers, cookies without Secure/HttpOnly/SameSite.
 
-Security header findings are recorded as a single consolidated section per host in `recon_report.md` rather than one entry per missing header. Cookie attribute issues are recorded in a separate subsection. Version-disclosing headers are noted under Information Disclosure if not already covered by nikto.
-
----
-
-## Report Output
-
-recon_jr produces a single `recon_report.md` in the engagement root on completion. It contains one section per phase, with a subsection per tool. Each subsection summarises what the tool found — hosts discovered, ports open, TLS issues, headers missing, secrets detected, etc. — pulling from the tool output files already written to disk. It is generated at the end of the run; partial runs (e.g. resumed via `-from-phase`) produce a report covering completed phases only.
-
-All raw tool output (JSON, txt, XML) is written to disk as specified in the file layout section. The markdown report is a derived summary, not a replacement for the raw files.
+**CORS testing:** Tests `Origin: https://evil.example.com` reflection with credentials. Extended tests (null origin, subdomain origin, protocol-swap) are a planned enhancement.
 
 ---
 
-## API Integrations
+## Web Mode — Planned Enhancements
 
-### Nessus
+These are features identified as high-value gaps that will be added in subsequent iterations, in rough priority order.
 
-recon_jr triggers a Nessus scan via the Nessus REST API. It does not rely on a manually pre-configured scan. The engagement domain is placed into a pre-designed scan template; recon_jr does not build scan configuration from scratch.
+### API Surface Enumeration (Phase 4 extension)
 
-**Authentication:** All Nessus API requests use the `X-ApiKeys: accessKey=<key>;secretKey=<key>` header. Nessus runs with a self-signed TLS certificate by default; the HTTP client must support disabling certificate verification via `nessus_insecure_tls: true` in config. This flag must be set explicitly — it does not default to true.
+No automated discovery of API surfaces exists beyond generic crawling. Add:
 
-**Scan naming and targeting:** The scan name is set to the engage_jr engagement directory name, which is always the project ID (e.g. `ACME-2024-001`). This ensures every Nessus scan is traceable back to a specific engagement in the Nessus console. The target field is populated with the root domain name(s) from the engagement host file. These are inserted into the pre-designed scan template identified by `nessus_template_uuid` in config — recon_jr does not define scan policy, credentials, or plugin selection. Those are the responsibility of the template.
+- Probe common API root paths (`/api`, `/api/v1`, `/api/v2`, `/rest`, `/graphql`, `/v1`, `/v2`) on each live host using httpx with status code filtering.
+- Fetch and parse OpenAPI/Swagger documentation if present (`/swagger`, `/swagger.json`, `/api-docs`, `/openapi.json`, `/swagger-ui.html`). Extract endpoint list and parameter names and append to `discovered_endpoints`.
+- GraphQL detection: send a `POST /graphql` with a minimal introspection query. If the endpoint returns a `data` key, record it as a discovered GraphQL endpoint and attempt schema introspection. Log schema to `other/graphql_<host>.json`. Record as a finding if introspection is enabled in production — it shouldn't be.
+- Record API endpoints in their own `other/api_endpoints_<host>.txt` so they can feed arjun parameter discovery and manual testing.
 
-**Full API workflow:**
+### Authentication and OAuth Surface (Phase 4 extension)
 
-1. `POST /scans` — create the scan. Body includes the template UUID, scan name (engagement folder name), and targets (domain names from host file). Response returns the new scan `id`.
-2. `POST /scans/{id}/launch` — launch the scan. Response returns a `scan_uuid` for the running scan.
-3. Poll `GET /scans/{id}` every 60 seconds. Check `info.status`. Continue polling while status is `running` or `pending`.
-4. Terminal states: `completed` → proceed to export. `aborted`, `cancelled`, `stopped`, `paused` → log the state, write it to `.recon.json`, skip Nessus findings, and continue the recon_jr run without blocking.
-5. If `nessus_max_scan_minutes` is exceeded before the scan reaches a terminal state, recon_jr logs a timeout warning, records the scan ID and current status in `.recon.json`, and continues the run without Nessus findings. On the next run, if an in-flight scan ID is present in `.recon.json`, recon_jr resumes polling from that scan rather than creating a new one.
-6. `POST /scans/{id}/export` with body `{"format": "nessus"}` — initiates the file export. Response returns `{"file": <token>}`.
-7. Poll `GET /scans/{id}/export/{token}/status` until response body is `{"status": "ready"}`.
-8. `GET /scans/{id}/export/{token}/download` — download the binary `.nessus` file (XML format). Stream the response body directly to disk at `nessus/<engagement-name>.nessus`.
-9. Parse the downloaded `.nessus` file for `ReportItem` elements. Filter findings as described in Phase 3 decision logic above. Write the filtered Critical/High/Medium JSON summary to `nessus/nessus_results.json` and all Low/Informational items to `nessus/nessus_low_info.json`. Filtered findings feed into `recon_report.md`.
+- Probe common auth endpoint paths per host (`/login`, `/signin`, `/auth`, `/sso`, `/oauth`, `/oauth/token`, `/oauth/authorize`, `/saml/sso`). Record any that return 200 or redirect to auth forms.
+- Fetch `/.well-known/openid-configuration` and `/.well-known/oauth-authorization-server`. Parse and record: authorization endpoint, token endpoint, userinfo endpoint, JWKS URI. These feed OAuth misconfiguration testing.
+- Record discovered auth endpoints in `other/auth_endpoints_<host>.txt`.
 
-The `.nessus` file is the authoritative record. `nessus_results.json` and `nessus_low_info.json` are derived from it and can be regenerated. Do not delete the `.nessus` file.
+### Cloud Storage Enumeration (Phase 1 extension)
 
-**Config keys relevant to Nessus:**
+After subdomain enumeration, derive candidate cloud storage names from the engagement domain and org name and probe them:
 
-| Key | Purpose |
-|---|---|
-| `nessus_host` | Base URL including port, e.g. `https://nessus.example.com:8834` |
-| `nessus_access_key` | API access key |
-| `nessus_secret_key` | API secret key |
-| `nessus_template_uuid` | UUID of the pre-designed scan template to use |
-| `nessus_insecure_tls` | Set `true` to skip TLS certificate verification (required for self-signed certs) |
-| `nessus_poll_secs` | Seconds between scan status polls (default `60`) |
-| `nessus_max_scan_minutes` | Maximum minutes to wait for scan completion before timeout (default `240`) |
+- **S3:** check `<org>.s3.amazonaws.com`, `<org>-assets.s3.amazonaws.com`, `<org>-backup.s3.amazonaws.com`, `<org>-static.s3.amazonaws.com` and common variations. A 200 or 403 response indicates the bucket exists; a 200 with XML listing indicates public read. Record bucket names and access status in `other/cloud_storage.json`.
+- **Azure Blob:** probe `<org>.blob.core.windows.net`, `<org>-assets.blob.core.windows.net`.
+- **Google Cloud Storage:** probe `storage.googleapis.com/<org>`, `<org>.storage.googleapis.com`.
+- This runs passively (HTTP HEAD requests only) and does not attempt any write operations.
+
+### Robots.txt and Sitemap Parsing (Phase 4 addition)
+
+For each live HTTP host, fetch `/robots.txt`, `/sitemap.xml`, `/sitemap_index.xml`, `/.well-known/security.txt`, and `/.well-known/change-password`. Parse:
+
+- `robots.txt`: extract all `Disallow` and `Allow` paths — these are often the most interesting endpoints and are deliberately not crawled by default. Append to `discovered_endpoints`.
+- `sitemap.xml`: extract all `<loc>` URLs. Append to `discovered_endpoints`.
+- `security.txt`: record contact and policy URLs if present.
+- All parsed content written to `other/wellknown_<host>.txt`.
+
+### Subdomain Takeover Surface (Phase 1 extension)
+
+After subdomain enumeration and resolution, probe each discovered subdomain for takeover indicators:
+
+- For CNAME records pointing to external services (GitHub Pages, Heroku, Netlify, Fastly, AWS S3, Azure, etc.), check whether the pointed-to resource returns a 404 or "not found" page characteristic of an unclaimed service.
+- Maintain a static fingerprint list of known takeover indicators per service (e.g., GitHub Pages: "There isn't a GitHub Pages site here", Heroku: "No such app").
+- Record confirmed or likely takeover candidates in `recon_report.md` as High findings.
+- Record as Medium if CNAME points to an external service but the page content is not a known takeover indicator (manual review needed).
+
+**Scope boundary:** This feature performs detection only — DNS resolution and a GET request to check the response body. It does not register domains, claim S3 buckets, create GitHub Pages sites, or take any action that would constitute performing the takeover. Actually claiming a resource requires explicit written authorisation beyond standard pentest scope and is handled manually if permitted.
+
+### SSRF and Open Redirect Surface Mapping (Phase 4 extension)
+
+After parameter discovery (arjun output), scan the `discovered_endpoints` list for parameters whose names suggest SSRF or redirect attack surface:
+
+- SSRF candidates: parameters named `url`, `uri`, `path`, `dest`, `destination`, `target`, `proxy`, `host`, `endpoint`, `redirect_to`, `callback`, `webhook`, `fetch`, `load`, `source`, `src`, `img`, `image`.
+- Open redirect candidates: parameters named `redirect`, `return`, `next`, `continue`, `goto`, `back`, `redir`, `returnUrl`, `returnTo`, `successUrl`, `failUrl`.
+- Write candidate endpoints and parameter names to `other/ssrf_surface.txt` and `other/redirect_surface.txt`. These are surface maps, not exploitation — no payloads are sent.
+
+### Rate Limiting Surface (Phase 7 extension)
+
+For each live HTTP host, record rate limiting header presence and configuration:
+
+- Capture `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Policy`, `Retry-After` headers from normal responses.
+- Record which hosts have rate limiting headers (and their values) vs. which have none.
+- Write to `other/ratelimit_<host>.txt`. Hosts with no rate limiting headers are noted in `recon_report.md` as Info findings — absence of rate limiting headers is worth verifying manually.
 
 ---
 
-## Output and File Layout
+## Infra Mode — Overview
 
-After a full run, the engagement directory contains:
+Infra mode is designed for network and infrastructure assessments where the engagement scope is expressed as IP ranges, CIDRs, ASNs, or an organisation name rather than a single web application. The goal is the same as web mode — eliminate the manual groundwork so that time is spent on what requires a human — but the attack surface is fundamentally different.
+
+Key differences from web mode:
+
+- Input is CIDR blocks and IP ranges, not domain names. Host expansion happens before scanning.
+- No assumption that port 80/443 is the primary service. Everything that's alive gets identified.
+- Web layer scanning (httpx, feroxbuster, nuclei) is secondary — it runs on discovered web services, but is not the primary objective.
+- Service-specific protocol enumeration replaces web-specific enumeration: SMB, LDAP/Active Directory, SNMP, RPC, Kerberos, database ports, VPN gateways, management interfaces.
+- Output is oriented around services and hosts rather than web endpoints and findings.
+- Nessus is the primary vulnerability assessment mechanism — nmap NSE alone is not enough at infrastructure scale.
+
+Invocation:
+
+```
+recon_jr -mode infra
+recon_jr -mode infra -dir ~/Documents/Engagements/work/client-name
+recon_jr -mode infra -from-phase 3
+recon_jr -mode infra -allow-intrusive
+```
+
+All CLI flags from web mode carry over. `-allow-intrusive` gates the more aggressive enumeration tools (enum4linux, kerbrute, Nessus authenticated scan).
+
+---
+
+## Infra Mode — Phases
+
+### Phase 1 — Asset Discovery
+
+Establishes the full scope before any active scanning. Combines passive OSINT with the provided host file.
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `asnmap` / `bgpview` API | Expand ASN to IP ranges | CIDR list |
+| `whois` | Confirm ownership of IP ranges | Text per range |
+| Shodan API (optional) | Passive service discovery for IP ranges — ports open, banners, CVEs | JSON per IP |
+| `amass intel` | Reverse WHOIS, ASN, and certificate-based asset discovery | Host + IP list |
+| crt.sh API | Certificate transparency for IP-associated domains | Domain list |
+
+**Decision logic:** Any IP range returned by ASN expansion that is not covered by the provided scope file is flagged and excluded before scanning begins — the operator must explicitly add it to scope. This prevents scope creep when an ASN contains ranges belonging to multiple legal entities.
+
+If Shodan credentials are configured, Shodan data is used to pre-populate a list of known-open ports per host. This reduces the cold-start nmap scan time significantly on large ranges, but nmap is still run to confirm — Shodan data can be stale.
+
+Output: `other/asn_ranges.txt`, `other/shodan_<ip>.json`, `other/amass_assets.txt`
+
+### Phase 2 — Host Discovery
+
+Determines which hosts in scope are alive before any port scanning begins. On large ranges, scanning dead IPs is the largest time cost.
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `nmap -sn` (ping sweep) | ICMP echo, TCP SYN to 80/443, TCP ACK to 80, UDP to 40125 | Alive host list |
+| `masscan -p 80,443,22` | Fast TCP SYN sweep for confirmation on large ranges | Alive host list |
+| `nmap -sn --send-eth` | ARP sweep for local network segments | Alive host list (LAN) |
+
+Results are deduplicated and merged into `infra_alive_hosts` in the engagement root. This list feeds all subsequent phases.
+
+**Decision logic:** Hosts that do not respond to the sweep are written to `infra_dead_hosts`. These are not scanned further unless `-scan-dead` is explicitly set, which forces nmap to scan them even without ping response (useful when ICMP is blocked by firewalls).
+
+**Rate limiting:** masscan rate defaults to `--rate 1000` (packets per second). This is conservative — masscan's default is orders of magnitude higher. Configurable via `infra_masscan_rate` in config. Always lower than what production networks will notice; stealth is not the goal but availability impact prevention is.
+
+Output: `infra_alive_hosts`, `infra_dead_hosts`
+
+### Phase 3 — Port and Service Scanning
+
+Full-port scan of all alive hosts with service and version detection. This is the most time-consuming phase and drives everything that follows.
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `nmap -p- --min-rate 500 -T3` | Full TCP port sweep per host | Per-host XML/nmap/gnmap |
+| `nmap -sV -sC -p <open>` | Service/version + default NSE on open ports | Per-host XML/nmap/gnmap |
+| `nmap -sU --top-ports 100` | UDP top-100 (extended from web mode top-20) | Per-host XML/nmap/gnmap |
+
+nmap output naming follows the same convention as web mode: `nmap_tcp-fullports_<host>.*`, `nmap_tcp-svc_<host>.*`, `nmap_udp-top100_<host>.*`.
+
+nmap is run with a lower rate (`--min-rate 500`) than web mode (`--min-rate 2000`) because infrastructure targets may include switches, routers, and OT-adjacent systems that are sensitive to traffic spikes. This is configurable via `infra_nmap_min_rate` in config.
+
+**NSE script selection in infra mode:** Rather than the default `-sC`, infra mode uses a curated script list appropriate to the discovered services. This is determined dynamically based on which ports are open:
+
+- Port 21 (FTP): `ftp-anon`, `ftp-bounce`, `ftp-syst`
+- Port 22 (SSH): `ssh-auth-methods`, `ssh-hostkey`, `ssh2-enum-algos`
+- Port 25/465/587 (SMTP): `smtp-commands`, `smtp-open-relay`, `smtp-enum-users`
+- Port 53 (DNS): `dns-zone-transfer`, `dns-recursion`, `dns-srv-enum`
+- Port 88 (Kerberos): `krb5-enum-users`
+- Port 139/445 (SMB): `smb-security-mode`, `smb-os-discovery`, `smb2-security-mode`, `smb-vuln-ms17-010`, `smb-vuln-cve2009-3103` — these are detection scripts that probe for the vulnerability condition, they do not exploit it
+- Port 389/636 (LDAP): `ldap-rootdse`, `ldap-search`
+- Port 443/8443 (HTTPS): `ssl-cert`, `ssl-enum-ciphers`, `http-title`
+- Port 161 (SNMP): `snmp-info`, `snmp-interfaces`, `snmp-sysdescr`
+- Port 3306 (MySQL): `mysql-info`, `mysql-empty-password`
+- Port 3389 (RDP): `rdp-enum-encryption`
+- Port 5900 (VNC): `vnc-info`, `vnc-brute` (intrusive only — tries a small fixed list of well-known default passwords such as blank, `password`, `vnc` to detect unconfigured instances; not a brute force loop)
+
+This produces targeted, relevant NSE output rather than running every default script against every service.
+
+**Decision logic:** Every open port is recorded in the overview. Unexpected services are reported — not just management interfaces as in web mode, but anything that does not match the engagement's stated service profile. A database port open to the internet is always High regardless of context. An SNMP port with community string `public` readable is always noted.
+
+Output: `nmap/nmap_tcp-fullports_<host>.*`, `nmap/nmap_tcp-svc_<host>.*`, `nmap/nmap_udp-top100_<host>.*`
+
+### Phase 4 — Service Enumeration
+
+Runs targeted protocol-specific enumeration tools against each service identified in Phase 3. Only runs for services that are actually present — no shotgun approach. The tool list here is driven by what nmap found, not a static list.
+
+#### SMB (ports 139, 445)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `enum4linux-ng` | SMB: null session enumeration, shares, users, OS, domain info | JSON per host |
+| `smbclient -L` | Share listing via null or guest session | Text per host |
+| `crackmapexec smb` / `netexec smb` | SMB signing, OS, domain membership, null session | JSON per host |
+
+**Decision logic:** Record in report: null session authentication permitted, SMB signing disabled (relay risk), anonymous share listing, shares accessible without authentication, SMB1 enabled (if detected by nmap NSE or smb-security-mode). Guest access to shares is always High. Null session is Medium (information disclosure). SMB signing disabled alone is Medium; combined with relay-permitting configuration it becomes High.
+
+Output: `smb/<host>_enum4linux.json`, `smb/<host>_shares.txt`
+
+#### LDAP / Active Directory (ports 389, 636, 3268, 3269)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `ldapsearch -x` | Anonymous LDAP bind — enumerate base DN, naming contexts | Text per host |
+| `ldapdomaindump`* | Authenticated LDAP dump of AD objects (users, groups, GPOs) | JSON per domain |
+| `enum4linux-ng -A` | AD user and group enumeration via RPC | JSON per host |
+
+`*` = requires `-allow-intrusive` and credentials in config
+
+**Decision logic:** Anonymous LDAP bind permitted is always reported — even read-only LDAP access leaks user accounts, group memberships, and domain structure. Record: base DN, detected domain name, whether anonymous bind returns results. If `-allow-intrusive` is set and credentials exist, a full ldapdomaindump is attempted and the results (user list, enabled/disabled accounts, admin groups, password policy) are written to `ldap/` for manual review.
+
+Output: `ldap/<host>_rootdse.txt`, `ldap/<host>_anonymous.txt`, `ldap/domaindump/` (if authenticated)
+
+#### SNMP (port 161)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `onesixtyone` | Community string bruteforce (common strings only) | Text per host |
+| `snmpwalk -v1/v2c -c public` | Walk OID tree with community string `public` | Text per host |
+| `snmpwalk -v1/v2c -c private` | Walk with `private` | Text per host |
+
+**Decision logic:** `public` or `private` community strings responding is always reported as High — these expose full system configuration, interface lists, routing tables, and often credentials. Record: responding community strings, system description OID (reveals OS and version), interface list. Full walk output written to `snmp/<host>_walk.txt`. Key OIDs parsed and summarised in the report: sysDescr, sysContact, sysName, sysLocation, hrSWRunName (running processes).
+
+Output: `snmp/<host>_communities.txt`, `snmp/<host>_walk.txt`
+
+#### RPC / Windows Services (ports 135, 593)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `rpcclient -U ""` | Null session RPC — enumerate users, groups, password policy | Text per host |
+| `impacket-rpcdump` | List RPC endpoints | Text per host |
+
+**Decision logic:** Null session RPC access is Medium-High depending on what it exposes. Record: accessible RPC endpoints, whether user enumeration is possible via null session.
+
+Output: `services/<host>_rpc.txt`
+
+#### Kerberos (port 88)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `nmap --script krb5-enum-users` | Username enumeration via Kerberos pre-authentication error differentiation | Text per host |
+| `kerbrute userenum`* | Kerberos user enumeration using a wordlist | Text per host |
+
+`*` = requires `-allow-intrusive`
+
+**Decision logic:** Valid usernames confirmed via Kerberos enumeration are recorded as a Medium finding (information disclosure feeding brute-force/spray attacks). Write confirmed valid usernames to `other/valid_users.txt` — this file is referenced in the report as a deliverable for the manual test phase.
+
+Output: `services/<host>_kerberos_users.txt`, `other/valid_users.txt`
+
+#### Database Services (ports 1433, 3306, 5432, 1521, 27017, 6379)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `nmap --script` (service-specific) | Version detection, auth check, empty password check | Text per host |
+
+**Decision logic:** Any database port reachable from the assessment network is reported as High if authentication is not required, Medium if it is. The nmap `mysql-empty-password` NSE checks whether the root account accepts an empty password — it does not read data from the database. Unauthenticated MongoDB, unauthenticated Redis, and anonymous SQL Server connections are detected by checking whether the service accepts a connection without credentials. Record: port, version, whether authentication is required. No data is read from any database service.
+
+#### Email Infrastructure (ports 25, 465, 587, 110, 143, 993, 995)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `nmap --script smtp-*` | SMTP open relay check, user enumeration via VRFY/EXPN/RCPT | Text per host |
+| `testssl.sh` | TLS configuration on SMTPS/IMAPS/POP3S | JSON per host |
+| `swaks`* | SMTP relay detection — attempts a relay transaction to a non-existent address to determine if the server will accept it | Text per host |
+
+`*` = requires `-allow-intrusive`
+
+**Decision logic:** Open SMTP relay is Critical. SMTP user enumeration via VRFY/EXPN is Medium. STARTTLS not enforced on port 587 is Medium. Record TLS configuration issues consistent with the web mode testssl decision logic.
+
+**Scope boundary for swaks:** swaks sends an SMTP transaction to a non-deliverable address to test whether the server accepts relay. It does not send email to real recipients, does not deliver any content, and does not attempt authentication bypass. The test is purely "will this server accept a relay request" — the transaction is rejected by the destination or never routed.
+
+Output: `services/<host>_smtp.txt`, `other/testssl/<host>.json`
+
+#### VPN and Remote Access (ports 500, 4500, 1194, 1701, 1723)
+
+| Tool | Purpose | Output |
+|---|---|---|
+| `ike-scan` | IKEv1/IKEv2 VPN gateway detection and proposal enumeration | Text per host |
+| `nmap --script` | OpenVPN, WireGuard, PPTP detection | Text per host |
+
+**Decision logic:** Record: VPN gateway presence, IKE vendor ID (reveals VPN product and version), aggressive mode enabled (IKEv1 — allows offline PSK cracking), supported encryption/hash proposals. Weak proposals (DES, MD5) are always reported as High.
+
+Output: `services/<host>_vpn.txt`
+
+#### Web Services on Non-Standard Ports
+
+Any HTTP/HTTPS service found on a non-standard port by nmap is enumerated in the same way as web mode Phase 3 onwards — but as a sub-workflow within infra mode rather than the primary objective. This includes:
+
+- Management interfaces (Tomcat manager, JBoss, WebLogic console, Jenkins, Kibana, Grafana, Prometheus, Portainer, etc.)
+- Web-based configuration UIs (router admin pages, IPMI/BMC web interfaces, printer management, etc.)
+- Internal applications inadvertently exposed
+
+`httpx` runs against all discovered web services to probe status codes, titles, and technology. `testssl` runs against all HTTPS services. `nuclei` runs with infra-appropriate templates (default credentials, exposed management panels, CVE templates). `gowitness` takes screenshots.
+
+### Phase 5 — Known Vulnerability Identification
+
+| Tool | Purpose | Output |
+|---|---|---|
+| Nessus API | Full credentialed or uncredentialed infrastructure scan | JSON |
+| `nuclei -t technologies/ -t network/ -t default-logins/` | Template-based detection for default credentials and known CVEs | JSON |
+| `searchsploit` (offline) | Match discovered service versions against ExploitDB — reference only | Text |
+
+**Nessus in infra mode:** The same Nessus API integration as web mode, but using an infrastructure-appropriate policy (full port scan, network checks, not just HTTP plugins). A separate `nessus_infra_template_uuid` config key is used so infra and web policies are not confused. Nessus performs detection — it identifies vulnerability conditions, it does not exploit them.
+
+**nuclei in infra mode:** Runs with templates from `technologies/`, `network/`, and `default-logins/` only — not web application templates, not exploit templates. `default-logins` templates check whether a service responds positively to a single known default credential pair (e.g., `admin:admin` on a Tomcat manager page). This is checking for a misconfiguration, not iterating a password list. `--exclude-tags exploit,dos,fuzz` is set unconditionally.
+
+**searchsploit:** Runs entirely offline — it queries a local copy of the ExploitDB database against the service version strings nmap identified. No network requests are made. No exploits are run. The output is a list of known public exploits for the detected versions, written to `other/searchsploit/` as a reference for the operator to review and decide what to test manually.
+
+**Decision logic:** All Critical and High Nessus findings in the report. Infra-specific mediums to include: default credentials confirmed present (by nuclei detection), clear-text authentication protocols, SSL/TLS on vulnerable versions, anonymous access to management interfaces. Searchsploit matches are advisory only — they identify known-exploitable versions for the operator to follow up on, they do not confirm exploitability.
+
+Output: `nessus/`, `other/nuclei_infra.json`, `other/searchsploit/`
+
+### Phase 6 — Web Layer (Discovered Web Services Only)
+
+Runs a reduced version of web mode phases 2-5 against HTTP/HTTPS services discovered on non-standard ports during infra scanning. Standard ports (80, 443) from the scope are also included if the engagement contains web hosts.
+
+This is not a full web test — it is a surface scan to identify low-hanging fruit on management interfaces and to ensure the report covers the web layer of discovered infrastructure.
+
+Tools run per discovered web service:
+- `whatweb` — technology fingerprinting
+- `nuclei` (default-logins, exposed-panels, CVE templates) — default credential and known-vuln checks
+- `testssl` — TLS audit on HTTPS services
+- Security headers via `curl -I`
+- HTTP method check via `OPTIONS`
+
+Full web mode phases (feroxbuster, katana, arjun, wpscan, gitleaks) are **not** run in infra mode unless `-web-full` is explicitly passed. The rationale: infra mode is for understanding what's running, not for comprehensive web testing. Web application testing should be a separate engagement with its own recon_jr web mode run.
+
+Output: same as web mode phases 2/3/7 — `other/httpx.json`, `other/whatweb.json`, `other/testssl/`, `other/headers_*.txt`
+
+---
+
+## Infra Mode — Output Layout
 
 ```
 <engagement>/
-├── .engage.json          # written by engage_jr
-├── .recon.json           # written by recon_jr — run summary, tool status, phase completion
-├── recon_report.md       # written by recon_jr — full summary of all tool findings
-├── hosts                 # written by engage_jr
-├── http_hosts            # written by engage_jr
-├── nohttp_hosts          # written by engage_jr
-├── discovered_hosts      # written by recon_jr — merged subdomains + originals
-├── discovered_endpoints  # written by recon_jr — merged crawl + linkfinder + arjun output
+├── .engage.json
+├── .recon.json                         — run summary, mode, phase status
+├── recon_report.md                     — security findings
+├── recon_overview.md                   — full enumeration data (all hosts, ports, services)
+├── infra_alive_hosts                   — hosts confirmed alive in Phase 2
+├── infra_dead_hosts                    — hosts that did not respond to sweep
+├── other/valid_users.txt               — confirmed valid usernames (Kerberos, RPC)
 ├── nmap/
-│   ├── nmap_<host>.xml
-│   └── nmap_<host>.gnmap
+│   ├── nmap_tcp-fullports_<host>.*
+│   ├── nmap_tcp-svc_<host>.*
+│   └── nmap_udp-top100_<host>.*
 ├── nessus/
-│   ├── <engagement-name>.nessus   # downloaded from Nessus server — authoritative
-│   ├── nessus_results.json        # filtered Critical/High/Medium — derived from .nessus
-│   └── nessus_low_info.json       # Low/Informational — derived from .nessus
+│   ├── <name>.nessus
+│   ├── nessus_results.json
+│   └── nessus_low_info.json
+├── smb/
+│   ├── <host>_enum4linux.json
+│   └── <host>_shares.txt
+├── ldap/
+│   ├── <host>_rootdse.txt
+│   ├── <host>_anonymous.txt
+│   └── domaindump/                     — only with -allow-intrusive + credentials
+├── snmp/
+│   ├── <host>_communities.txt
+│   └── <host>_walk.txt
+├── services/
+│   ├── <host>_rpc.txt
+│   ├── <host>_kerberos_users.txt
+│   ├── <host>_smtp.txt
+│   └── <host>_vpn.txt
 └── other/
-    ├── subfinder.txt
+    ├── asn_ranges.txt
+    ├── amass_assets.txt
+    ├── shodan_<ip>.json
     ├── httpx.json
     ├── whatweb.json
-    ├── wafw00f.json
-    ├── screenshots/
-    │   └── gowitness.db (+ PNG exports)
     ├── testssl/
-    │   └── testssl_<host>.json
-    ├── nuclei/
-    │   └── nuclei_<host>.json
-    ├── feroxbuster/
-    │   └── ferox_<host>.json
-    ├── katana/
-    │   └── katana_<host>.json
-    ├── cms/
-    │   └── (wpscan/joomscan/droopescan output)
-    ├── theharvester_emails.txt
-    ├── secrets_unverified.json
-    └── arjun/
+    ├── nuclei_infra.json
+    ├── searchsploit/
+    ├── screenshots/
+    └── headers_<host>.txt
 ```
 
 ---
 
-## Configuration
+## Infra Mode — Configuration
 
-`~/.config/recon_jr/config.json`:
+Additional config keys for infra mode (added to `~/.config/recon_jr/config.json`):
 
 ```json
 {
-  "nessus_host":               "https://nessus.example.com:8834",
-  "nessus_access_key":         "",
-  "nessus_secret_key":         "",
-  "nessus_template_uuid":      "",
-  "nessus_insecure_tls":       false,
-  "nessus_poll_secs":          60,
-  "nessus_max_scan_minutes":   240,
-  "wordlist":                  "/usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt",
-  "nuclei_templates":          "~/.local/nuclei-templates",
-  "tools_timeout_secs":        300,
-  "tool_delay_secs":           5,
-  "skip_tools":                []
+  "nessus_infra_template_uuid":  "",
+  "shodan_api_key":              "",
+  "infra_masscan_rate":          1000,
+  "infra_nmap_min_rate":         500,
+  "infra_udp_top_ports":         100,
+  "infra_scan_dead_hosts":       false,
+  "smb_username":                "",
+  "smb_password":                "",
+  "ldap_username":               "",
+  "ldap_password":               "",
+  "kerberos_domain":             "",
+  "kerbrute_wordlist":           "/usr/share/seclists/Usernames/xato-net-10-million-usernames.txt"
 }
 ```
 
-`nessus_insecure_tls` must be set explicitly to `true` when connecting to a Nessus instance with a self-signed certificate. It is `false` by default and the tool will not silently bypass TLS verification.
-
-Env var equivalents follow the same `RECON_` prefix pattern as engage_jr uses `ENGAGE_`. CLI flags override everything.
-
-The `skip_tools` array allows named tools to be skipped without recompiling — useful when a tool is not installed, a scan type is out of scope, or a specific phase needs to be skipped on a re-run.
+`smb_username`, `smb_password`, `ldap_username`, `ldap_password` are only used when `-allow-intrusive` is set. They are never written to the engagement directory.
 
 ---
 
-## CLI Interface
+## Infra Mode — Production Safety
+
+All the production safety controls from web mode apply without exception. Additional infra-specific controls:
+
+**Rate limiting on port sweeps:** masscan defaults are dangerous on production networks. The `infra_masscan_rate` config key is intentionally named and documented to make its consequence clear. The default of 1000 pps is conservative. Any value above 5000 pps logs a warning before scanning.
+
+**UDP scanning caution:** UDP top-100 is significantly more intrusive than top-20. Some UDP services (SNMP trap receivers, syslog servers, older VoIP) can behave unexpectedly when hit with a scan probe. The scan rate for UDP is capped at `-T3` (no override) and includes a 50ms inter-probe delay.
+
+**No exploitation, no credential spray:** infra mode identifies surfaces and confirms anonymous/default access only. It does not perform credential spraying (kerbrute is user enumeration only, not password spray), does not attempt exploit execution, and does not chain findings into attack paths. That is manual work.
+
+**Scope enforcement is mandatory in infra mode:** IP ranges must be present in the scope file before any active scanning begins. Any host discovered via ASN expansion or amass that is not covered by the scope file is excluded and logged. This is not negotiable — the blast radius of an accidental out-of-scope nmap scan on a corporate network is orders of magnitude higher than an accidental web request.
+
+**Pre-run confirmation in infra mode:** Shows the full CIDR list, total IP count, alive host estimate (from Shodan if available, otherwise IP count), tool list, masscan rate, and Nessus status before any scanning begins. Requires explicit confirmation. This confirmation is not bypassable in infra mode — not even with `-dry-run` substituting for it.
+
+---
+
+## Infra Mode — CLI
 
 ```
-recon_jr [options]
+recon_jr -mode infra [options]
 
-Options:
-  -dir <path>              Engagement directory (default: auto-discover from cwd)
-  -phase <n>               Run only a specific phase (1-7)
-  -from-phase <n>          Resume from a given phase (uses existing output)
-  -skip <tool>             Skip a named tool for this run (repeatable)
-  -no-nessus               Skip Nessus scan regardless of config credentials
-  -dry-run                 Show what would run without executing anything
-  -check-deps              Verify all required tools are installed and exit
-  -verbose                 Debug output
-  -config <path>           Config file override
-  -v                       Version
+Additional options in infra mode:
+  -allow-intrusive         Enable enum4linux, kerbrute, ldapdomaindump, swaks
+  -scan-dead               Scan hosts that did not respond to ping sweep
+  -no-masscan              Skip masscan, use nmap ping sweep only
+  -no-nessus               Skip Nessus scan
+  -web-full                Run full web mode phases on discovered web services
+  -smb-creds               Prompt for SMB credentials (overrides config)
+  -ldap-creds              Prompt for LDAP credentials (overrides config)
 ```
-
-`-from-phase` is important — if recon_jr fails mid-run or a tool produces bad output, the user should be able to resume from a specific phase rather than re-running everything from scratch. Output files from completed phases are left in place and reused.
 
 ---
 
 ## File Structure
 
-Mirroring engage_jr's design:
-
 | File | Owns |
 |---|---|
-| `main.go` | Flag parsing, phase orchestration, engage_jr meta discovery |
-| `config.go` | Config struct, 3-layer loading |
-| `runner.go` | Tool execution engine — runs a command, captures stdout/stderr, writes to output path, handles timeout |
+| `main.go` | Flag parsing, mode dispatch, phase orchestration, engage_jr discovery |
+| `config.go` | Config struct, 3-layer loading (web + infra keys) |
+| `runner.go` | Tool execution engine |
 | `meta.go` | Reads `.engage.json`, writes `.recon.json` |
-| `hosts.go` | Reads host files, builds master host list, deduplication |
-| `phases.go` | Phase definitions — maps phase number to tool list and execution logic |
-| `nessus.go` | Nessus API client — create scan, launch, poll, fetch, parse |
-| `parsers.go` | Per-tool output parsers — extracts structured findings from tool JSON/txt output |
-| `report.go` | Generates `recon_report.md` from parsed tool output, applying include/suppress rules |
-| `logger.go` | Identical pattern to engage_jr |
+| `hosts.go` | Reads host files, CIDR expansion, deduplication |
+| `phases.go` | Web mode phase definitions |
+| `phases_infra.go` | Infra mode phase definitions (new file) |
+| `nessus.go` | Nessus API client |
+| `parsers.go` | Per-tool output parsers (web tools) |
+| `parsers_infra.go` | Per-tool output parsers for infra tools (enum4linux, snmpwalk, ldapsearch, etc.) |
+| `report.go` | Generates `recon_report.md` |
+| `overview.go` | Generates `recon_overview.md` |
+| `scope.go` | Scope enforcement (host + CIDR) |
+| `scope_init.go` | Interactive scope setup |
+| `logger.go` | Logging |
 
 ---
 
-## Production Safety
+## MVP Scope — Infra Mode
 
-recon_jr will routinely run against production systems. A misconfiguration or an overly aggressive tool invocation has real consequences — a knocked-over web server mid-engagement is a client relationship problem as much as a technical one. The following controls are non-negotiable and must be implemented before the tool is used on any live engagement.
+The full infra tool list above is the end state. The MVP that delivers the most value with the least implementation risk:
 
-### Target Scope Enforcement
+1. Phase 1: asnmap IP range expansion + WHOIS confirmation
+2. Phase 2: nmap ping sweep for host discovery
+3. Phase 3: nmap full TCP port scan + service detection + targeted NSE
+4. Phase 4: enum4linux-ng (SMB), snmpwalk (SNMP), ldapsearch (LDAP anonymous)
+5. Phase 5: Nessus API (infra template) + nuclei (default-logins templates)
+6. Phase 6: httpx + testssl + nuclei on discovered web services
+7. `recon_report.md` and `recon_overview.md` generation with infra-appropriate sections
 
-Before any tool executes, recon_jr validates every host in the master host list against a scope file. The scope file is either specified explicitly via `-scope` or discovered automatically as `scope.txt` in the engagement root. If no scope file exists and `-scope` is not provided, recon_jr refuses to run and exits with an error — it does not fall back to trusting the host file alone.
-
-The scope file uses the same format as the engage_jr host file (CIDRs, ranges, bare hostnames, URLs). Any host discovered during Phase 1 subdomain enumeration that does not fall within scope is removed from the master host list before Phase 2 begins and logged to `recon/out_of_scope.txt` for reference. recon_jr never makes an active connection to an out-of-scope host.
-
-### Tool Safety Classification
-
-Every tool in the orchestration pipeline is classified as either **passive**, **active-safe**, or **active-intrusive**. The classification governs when and how it runs.
-
-**Passive** tools make no direct connection to the target. They query third-party sources (certificate transparency logs, search engines, DNS). These always run without restriction.
-
-**Active-safe** tools make direct connections to the target but are not expected to cause service disruption under normal conditions: `httpx`, `dig`, `dnsx`, `wafw00f`, `whatweb`, `gowitness`, `testssl`, `katana` (with rate limiting applied), `feroxbuster` (with rate limiting applied), `nmap` (service detection, no aggressive scripts).
-
-**Active-intrusive** tools carry a meaningful risk of service disruption, resource exhaustion, or triggering security controls in a way that could cause collateral impact: `nikto`, `nuclei` (fuzzing templates), `naabu`/`masscan` at high rates, `wpscan` with aggressive enumeration flags, `arjun`. These tools require explicit opt-in via a `-allow-intrusive` flag. Without this flag, recon_jr skips them entirely, logs that they were skipped, and notes in `recon_report.md` that intrusive scanning was not performed.
-
-The Nessus scan policy used must also be reviewed before use on production. A credentialed scan against a production database server is outside the intended use of this tool. The default Nessus policy ID in config should be a web-optimised, non-destructive policy. The config documentation must make this explicit.
-
-### Rate Limiting
-
-All active tools that accept rate limiting or concurrency flags are invoked with conservative defaults. These defaults are configurable but the config keys are named to make their purpose clear (`max_requests_per_second`, `max_concurrent_connections`). There is no "go fast" shortcut flag — if a user wants to increase rates they edit the config explicitly and accept the responsibility.
-
-Default limits:
-- `feroxbuster`: `--rate-limit 50` (requests per second)
-- `katana`: `-rate-limit 20`
-- `naabu`: `-rate 300` (packets per second — conservative; masscan defaults are orders of magnitude higher)
-- `nuclei`: `-rate-limit 50`
-- `nikto`: `-Pause 1` (1 second between requests)
-
-### Inter-Tool Delays
-
-A configurable inter-tool delay (`tool_delay_secs`, default `5`) is inserted between each tool execution. This prevents back-to-back tools from creating a burst that looks like an attack and gives any WAF or rate limiting on the target side time to reset between tools. The delay can be set to `0` explicitly but doing so logs a warning.
-
-### No Exploitation
-
-recon_jr is a recon tool. No tool in the pipeline executes payloads, attempts exploitation, or uses nuclei templates classified as `exploit` or `dos`. The nuclei invocation explicitly excludes these tags regardless of what is installed in the local template directory:
-
-```
-nuclei -exclude-tags exploit,dos,fuzz
-```
-
-The `fuzz` tag exclusion is also applied by default. Fuzzing templates can generate high request volumes and unexpected behaviour server-side. They are only included if `-allow-intrusive` is set and the user has explicitly added `-nuclei-fuzz` on top of that.
-
-### Pre-Run Confirmation
-
-When run against a `ModeWork` engagement (i.e. a real client), recon_jr displays a summary of what it is about to do — host count, tool list, intrusive flag status, Nessus status — and requires explicit confirmation before proceeding. If `nessus_insecure_tls: true` is set, a visible warning is displayed at this point: "WARNING: TLS verification disabled for Nessus — ensure you are on a trusted network". This is not a `--yes` bypass; it is a deliberate pause to review scope before anything touches the target. The confirmation prompt shows the first five hosts in scope and the total count so there is no ambiguity about what is being targeted.
-
-This confirmation step is skipped only in `-dry-run` mode.
-
-### Dependency Preflight Check
-
-Before Phase 1 begins — and before the pre-run confirmation prompt — recon_jr verifies that every binary it intends to invoke is present on `$PATH`. Tools listed in `skip_tools` (config or `-skip` flag) are excluded from the check. If any required binary is missing, recon_jr prints a complete list of missing tools and exits with a non-zero status. It does not attempt to run partial phases or silently skip missing tools unless they are explicitly in `skip_tools`.
-
-The preflight check is also available as a standalone command via `-check-deps`. This allows users to verify their environment is correctly configured without initiating a scan.
-
-Config validation (required keys present and non-empty, Nessus URL reachable if credentials provided, scope file exists) runs as part of the same preflight sequence, in order: config validation → dependency check → scope file verification → pre-run confirmation.
-
-### Graceful Interrupt Handling
-
-On receipt of `SIGINT` or `SIGTERM`, recon_jr:
-
-1. Sends a termination signal to the currently running child process.
-2. Waits up to 10 seconds for the child process to exit. If it does not, sends `SIGKILL`.
-3. Flushes `.recon.json` to disk with the current run state: which phases completed cleanly, which tool was running at interrupt time, and all findings raised up to that point.
-4. Logs the interruption clearly, including the interrupted tool name and phase number.
-5. Exits with a non-zero status code.
-
-This ensures that `-from-phase` has accurate state to resume from. A run interrupted mid-Phase 3 will leave `.recon.json` recording Phase 1 and Phase 2 as complete and Phase 3 as interrupted — the user can resume from Phase 3 without re-running earlier phases.
-
-If recon_jr is interrupted while a Nessus scan is in progress (i.e. the scan has been launched but has not yet reached a terminal state), the scan ID and current status are written to `.recon.json`. On a subsequent run, recon_jr checks for an existing in-flight scan ID in `.recon.json` and resumes polling from that scan rather than creating a new one.
+Kerbrute, crackmapexec/netexec, impacket tooling, ike-scan, swaks, and searchsploit come in the next iteration once the core infra scanning pipeline is solid and has been tested on lab infrastructure.
 
 ---
 
-## What recon_jr Does Not Do
+## What recon_jr Does Not Do (Either Mode)
 
-These are out of scope by design, not oversight:
-
-- It does not run tools concurrently against the target.
-- It does not perform any authenticated scanning (authenticated Burp scans, credentialed Nessus aside, remain manual).
-- It does not make decisions about CVSS scores or risk ratings — finding severity in `recon_report.md` reflects the tool's own severity classification.
-- It does not replace the manual test. The `recon_report.md` it produces is a starting point. Findings noted automatically should be verified before the report goes out.
-- It does not modify or overwrite engage_jr's output files.
-
----
-
-## MVP Scope
-
-The full tool list is the end state. The MVP is the subset that delivers the most time saving with the least implementation risk:
-
-1. engage_jr meta discovery and host file reading
-2. Phase 1: subfinder + crt.sh + dnsx
-3. Phase 2: httpx + whatweb + wafw00f + gowitness
-4. Phase 3: nmap + testssl
-5. Phase 5: nuclei (critical/high only)
-6. Phase 7: curl header parsing
-7. `recon_report.md` generation from completed phase outputs
-8. `.recon.json` output
-
-Nessus API integration, feroxbuster, katana, arjun, the secrets analysis phase, and CMS scanners come in the next iteration once the core orchestration and report generation pipeline are solid.
+- **Does not exploit anything.** No tool is invoked in a mode that executes code on the target, modifies system state, escalates privileges, or causes a vulnerability to be triggered. nuclei `exploit` and `dos` tags are excluded unconditionally. nmap NSE scripts are limited to enumeration and detection categories.
+- **Does not brute force credentials.** kerbrute runs in username enumeration mode only. SNMP checks two community strings. nuclei `default-logins` templates check one known default pair per service. There is no credential list iteration, no password spraying, no dictionary attack.
+- **Does not read or copy data from target systems.** SNMP walk, anonymous LDAP bind, and SMB share listing confirm what is *accessible* — they do not retrieve files, read database records, or exfiltrate data. The distinction is: "this share is readable without authentication" is a finding; reading the contents of that share is not what this tool does.
+- **Does not write to target systems.** No files are uploaded. No service configurations are changed. No S3 buckets, domains, or GitHub Pages sites are registered or claimed. Cloud storage probes are read-only HEAD requests.
+- **Does not chain findings into attack paths.** The report describes what exists and what that implies — it does not describe how to combine findings into a working attack. That analysis is the operator's job, done deliberately and with appropriate authorisation.
+- **Does not replace the manual test.** The output of recon_jr is a structured starting point. Every finding marked High or Critical should be verified by the operator before it goes into a client report. Automated tools produce false positives; the operator's judgement is the final check.
+- **Does not run tools concurrently against the target.**
+- **Does not modify or overwrite engage_jr output files.**
+- **Does not make CVSS scores or risk ratings** — severity labels reflect the originating tool's own classification and are a guide for triage, not a final risk rating.

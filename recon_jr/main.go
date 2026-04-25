@@ -249,6 +249,12 @@ func main() {
 	if err := copyReportToNotes(engDir); err != nil {
 		logDebug("could not copy report to notes: %v", err)
 	}
+	if err := RenderOverview(engDir, report); err != nil {
+		logWarn("generating overview: %v", err)
+	}
+	if err := copyOverviewToNotes(engDir); err != nil {
+		logDebug("could not copy overview to notes: %v", err)
+	}
 
 	if err := flushReconMeta(engDir, reconMeta); err != nil {
 		logWarn("writing final .recon.json: %v", err)
@@ -410,7 +416,7 @@ Phases:
   2 — Host Probing & Fingerprinting (httpx, whatweb, wafw00f, gowitness)
   3 — Infrastructure Scanning (nmap, testssl, Nessus API)
   4 — Web Content Discovery (katana, feroxbuster, waybackurls/gau, arjun*)
-  5 — Vulnerability Scanning (nuclei, nikto*, wpscan*, joomscan*, droopescan*)
+  5 — Vulnerability Scanning (nuclei, nikto, wpscan*, joomscan*, droopescan*)
   6 — JavaScript & Secrets (subjs, linkfinder, gitleaks/trufflehog)
   7 — Security Headers (curl)
 
