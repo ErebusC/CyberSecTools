@@ -35,10 +35,27 @@ func readLines(path string) ([]string, error) {
 	return lines, scanner.Err()
 }
 
+// findHostsFile returns the path of the hosts file in engDir, trying
+// "hosts", "hosts.txt", and "host.txt" in that order. Returns an empty
+// string if none exist.
+func findHostsFile(engDir string) string {
+	for _, name := range []string{"hosts", "hosts.txt", "host.txt"} {
+		p := filepath.Join(engDir, name)
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 // masterHostList reads the host files written by engage_jr and returns the combined,
 // deduplicated host lists. Returns allHosts (everything), httpHosts (URLs), noHTTPHosts.
 func masterHostList(engDir string) (all, http, noHTTP []string, err error) {
-	all, err = readLines(filepath.Join(engDir, "hosts"))
+	hostsFile := findHostsFile(engDir)
+	if hostsFile == "" {
+		return nil, nil, nil, fmt.Errorf("no hosts file found in %s (tried hosts, hosts.txt, host.txt)", engDir)
+	}
+	all, err = readLines(hostsFile)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("reading hosts: %w", err)
 	}
@@ -184,6 +201,24 @@ func extractRootDomains(hosts []string) []string {
 		}
 	}
 	return domains
+}
+
+// filterEndpointsInScope filters a list of endpoints against scope.
+// Relative paths (no scheme) are always kept — they're relative to an already
+// in-scope host. Absolute URLs are checked via scope.Contains.
+func filterEndpointsInScope(endpoints []string, scope *Scope) (inScope, outOfScope []string) {
+	for _, ep := range endpoints {
+		if !strings.Contains(ep, "://") {
+			inScope = append(inScope, ep)
+			continue
+		}
+		if scope.Contains(ep) {
+			inScope = append(inScope, ep)
+		} else {
+			outOfScope = append(outOfScope, ep)
+		}
+	}
+	return
 }
 
 // deduplicateHosts returns a new slice with duplicate entries removed, preserving order.

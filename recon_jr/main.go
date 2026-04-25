@@ -20,6 +20,7 @@ func main() {
 	cliFromPhase     := flag.Int("from-phase", 0, "Resume from a given phase (uses existing output)")
 	cliSkip          := flag.String("skip", "", "Comma-separated list of tools to skip for this run")
 	cliScope         := flag.String("scope", "", "Path to scope file (default: <engdir>/scope.txt, auto-derived if absent)")
+	cliWebScope      := flag.String("web-scope", "", "Path to web test scope file (default: <engdir>/web_scope.txt)")
 	cliNoNessus      := flag.Bool("no-nessus", false, "Skip Nessus scan regardless of config credentials")
 	cliNoSubdomains  := flag.Bool("no-subdomains", false, "Skip Phase 1 subdomain discovery (only scan original host file targets)")
 	cliAllowIntrusive := flag.Bool("allow-intrusive", false, "Enable intrusive tools (nikto, arjun, wpscan, etc.)")
@@ -107,12 +108,21 @@ func main() {
 		fatal("loading host files: %v", err)
 	}
 	if len(allHosts) == 0 {
-		fatal("no hosts found in %s/hosts — did engage_jr process a host file?", engDir)
+		fatal("no hosts found in %s — did engage_jr process a host file? (expected hosts, hosts.txt, or host.txt)", engDir)
 	}
 
 	scope, err := resolveScope(engDir, *cliScope, engMeta, allHosts)
 	if err != nil {
 		fatal("scope: %v", err)
+	}
+
+	// Web test scope — optional tighter scope for web app testing phases.
+	// If no file exists and we're running interactively (full run, not a single
+	// phase re-run), offer to set one up now.
+	webScopePath := findWebScopeFile(engDir, *cliWebScope)
+	webScope, err := resolveWebScope(webScopePath)
+	if err != nil {
+		fatal("web scope: %v", err)
 	}
 
 	// Dependency preflight (warn, do not fail, for Nessus credentials)
@@ -134,7 +144,27 @@ func main() {
 	httpHosts, _ = filterInScope(httpHosts, scope)
 	noHTTPHosts, _ = filterInScope(noHTTPHosts, scope)
 
-	domains := extractRootDomains(allHosts)
+	// Only enumerate domains that are explicitly in scope. extractRootDomains
+	// always returns the bare root (e.g. erebus.cymru from test.erebus.cymru),
+	// so we filter through scope: if the root domain is not in scope, Phase 1
+	// subdomain tools won't run against it — preventing out-of-scope enumeration.
+	domains, _ := filterInScope(extractRootDomains(allHosts), scope)
+
+	// If no web scope was specified and this is a full run (not a single-phase
+	// re-run), offer the interactive web scope review.
+	if webScope == nil && !dryRun && *cliPhase == 0 && *cliFromPhase == 0 {
+		webScope, err = reviewAndSaveWebScope(engDir, allHosts)
+		if err != nil {
+			fatal("web scope: %v", err)
+		}
+	}
+
+	// Apply web scope to the initial HTTP host list. Phase 2 will re-apply it
+	// as new HTTP services are discovered via httpx.
+	if webScope != nil {
+		httpHosts, _ = filterInScope(httpHosts, webScope)
+		logDebug("web scope applied: %d HTTP hosts in web test scope", len(httpHosts))
+	}
 
 	// Nessus insecure TLS warning (shown at pre-run, not just on connection)
 	if cfg.NessusInsecureTLS && !*cliNoNessus {
@@ -174,6 +204,7 @@ func main() {
 		EngMeta:        &engMeta,
 		ReconMeta:      reconMeta,
 		Scope:          scope,
+		WebScope:       webScope,
 		AllHosts:       allHosts,
 		HTTPHosts:      httpHosts,
 		NoHTTPHosts:    noHTTPHosts,
@@ -370,6 +401,7 @@ Options:
   -from-phase <n>           Resume from a given phase (uses existing output)
   -skip <tool[,tool]>       Skip named tools for this run
   -scope <path>             Scope file path (default: <engdir>/scope.txt)
+  -web-scope <path>         Web test scope file (default: <engdir>/web_scope.txt)
   -no-nessus                Skip Nessus scan regardless of config credentials
   -allow-intrusive          Enable intrusive tools (nikto, arjun, wpscan, naabu, etc.)
   -dry-run                  Show what would run without executing anything

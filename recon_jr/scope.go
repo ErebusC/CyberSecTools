@@ -56,22 +56,33 @@ func findScopeFile(engDir, cliScope string) string {
 	return ""
 }
 
-// implicitScope builds a Scope from the list of hosts already in the engagement
-// directory (the engage_jr host file). All original hosts, their root domains,
-// and subdomains thereof are considered in scope.
-func implicitScope(hosts []string) *Scope {
-	s := &Scope{ips: make(map[string]struct{})}
-	for _, h := range hosts {
-		_ = s.addEntry(h)
-		// Also add root domain so discovered subdomains are in scope
-		parts := strings.Split(h, ".")
-		if len(parts) >= 2 && !rePlainIP.MatchString(h) {
-			root := strings.Join(parts[len(parts)-2:], ".")
-			_ = s.addEntry(root)
-		}
+// findWebScopeFile looks for web_scope.txt in engDir. Returns the path if
+// found, or an empty string if absent (web testing falls back to main scope).
+func findWebScopeFile(engDir, cliWebScope string) string {
+	if cliWebScope != "" {
+		return cliWebScope
 	}
-	return s
+	candidate := filepath.Join(engDir, "web_scope.txt")
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	return ""
 }
+
+// resolveWebScope loads web_scope.txt if it exists. Returns nil when no web
+// scope file is present — callers treat nil as "use main scope for everything".
+func resolveWebScope(path string) (*Scope, error) {
+	if path == "" {
+		return nil, nil
+	}
+	scope, err := loadScope(path)
+	if err != nil {
+		return nil, fmt.Errorf("loading web scope file %s: %w", path, err)
+	}
+	logDebug("web scope loaded from %s", path)
+	return scope, nil
+}
+
 
 func (s *Scope) addEntry(entry string) error {
 	// Strip scheme for domain/host matching.

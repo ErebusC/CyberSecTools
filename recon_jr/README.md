@@ -60,6 +60,9 @@ recon_jr -dry-run
 
 # Check all dependencies are installed
 recon_jr -check-deps
+
+# Explicit scope files (both auto-detected from engagement dir if absent)
+recon_jr -scope /path/to/scope.txt -web-scope /path/to/web_scope.txt
 ```
 
 ---
@@ -77,6 +80,67 @@ recon_jr -check-deps
 | 7 | Security Headers | curl |
 
 `*` = requires `-allow-intrusive`
+
+---
+
+## Scope
+
+recon_jr uses a two-tier scope model to give precise control over what gets enumerated versus what gets actively web-tested.
+
+### `scope.txt` — Enumeration & Infrastructure Scope
+
+Controls what recon_jr is allowed to **discover and scan at the infrastructure level**:
+
+- Subdomain enumeration (subfinder, theHarvester, crt.sh)
+- DNS checks (AXFR, SPF, DMARC, CAA, MX)
+- nmap port scanning
+- Nessus
+
+On first run, recon_jr prompts you to review and edit the derived scope before saving it. Out-of-scope hosts discovered during enumeration are written to `other/out_of_scope.txt` and never scanned.
+
+Scope entries support the following formats:
+
+```
+example.com          # matches example.com and all subdomains
+sub.example.com      # matches sub.example.com and deeper subdomains only
+10.10.10.50          # single IP
+10.10.10.0/24        # CIDR
+10.10.10.1-20        # IP range
+https://example.com  # URL — scheme is stripped, treated as domain
+```
+
+> **Subdomain enumeration scope:** recon_jr only runs subdomain tools (subfinder, crt.sh, etc.) against domains that are explicitly in scope. If your scope is `app.example.com`, subdomain tools will only query `app.example.com`, not the root `example.com`. Add `example.com` to scope if you want full root-domain enumeration.
+
+### `web_scope.txt` — Web Application Test Scope
+
+An optional second scope file that restricts which hosts receive **active web application testing**:
+
+- httpx probing (builds the HTTP target list)
+- whatweb, wafw00f, gowitness
+- feroxbuster, katana, waybackurls, gau
+- nuclei, nikto, CMS scanners
+- testssl
+- Security headers, CORS, HTTP method checks
+- API surface, auth surface enumeration
+
+If `web_scope.txt` is absent, web testing targets everything in `scope.txt`. On first run (full run only), recon_jr prompts you to optionally create one.
+
+### Scope combinations
+
+| `scope.txt` | `web_scope.txt` | Result |
+|---|---|---|
+| `erebus.cymru` | *(absent)* | Full infra scan + full web test on everything discovered |
+| `erebus.cymru` | `app.erebus.cymru` | nmap scans all discovered hosts; nuclei/feroxbuster/etc. only target `app.erebus.cymru` |
+| `app.erebus.cymru` | `app.erebus.cymru` | Everything locked to `app.erebus.cymru` only |
+
+### Scope enforcement
+
+Scope is enforced at every stage — not just on the initial host list:
+
+- Hosts discovered by subfinder/crt.sh/theHarvester are filtered before being added to the scan queue
+- Previously discovered hosts (from prior runs) are re-validated against the current scope on each run
+- Endpoints from katana, waybackurls, gau, linkfinder, robots.txt, sitemaps, OpenAPI specs, and OIDC documents are filtered before being written to `discovered_endpoints`
+- nmap deduplicates scan targets by resolved IP — if multiple hostnames resolve to the same address, only one scan is run
 
 ---
 
@@ -129,10 +193,12 @@ All output is written into the engagement directory:
 <engagement>/
 ├── .recon.json               # Phase state, findings, resume info
 ├── recon_report.md           # Final summary report
+├── scope.txt                 # Enumeration & infra scope
+├── web_scope.txt             # Web test scope (optional)
 ├── hosts                     # All in-scope hosts (original + discovered)
-├── http_hosts                # Live HTTP/HTTPS services
+├── http_hosts                # Live HTTP/HTTPS services (web scope applied)
 ├── discovered_hosts          # Hosts found during enumeration
-├── discovered_endpoints      # URLs found during crawling
+├── discovered_endpoints      # URLs found during crawling (scope filtered)
 ├── nmap/
 │   ├── nmap_tcp-fullports_<host>.{xml,nmap,gnmap}   # pass 1: full TCP port sweep
 │   ├── nmap_tcp-svc_<host>.{xml,nmap,gnmap}         # pass 2: service/version + NSE on open ports
@@ -144,25 +210,26 @@ All output is written into the engagement directory:
 └── other/
     ├── httpx.json
     ├── whatweb.json
-    ├── wafw00f/
     ├── screenshots/
-    ├── testssl/
     ├── subfinder_<domain>.txt
     ├── theharvester_<domain>.xml
     ├── theharvester_emails.txt
     ├── dnsx.txt
-    ├── katana/
-    ├── feroxbuster/
+    ├── katana_<host>.json
+    ├── feroxbuster_<host>.json
     ├── waybackurls_<domain>.txt
-    ├── arjun/
-    ├── nuclei/
-    ├── nikto/
-    ├── cms/
+    ├── nuclei.json
+    ├── nikto_<host>.txt
     ├── js_urls.txt
     ├── linkfinder_endpoints.txt
     ├── gitleaks.json
     ├── secrets_unverified.json
-    └── headers/
+    ├── api_endpoints_<host>.txt
+    ├── auth_endpoints_<host>.txt
+    ├── ssrf_surface.txt
+    ├── redirect_surface.txt
+    ├── out_of_scope.txt
+    └── headers_<host>.txt
 ```
 
 ---
@@ -180,12 +247,6 @@ recon_jr -phase 4
 ```
 
 Phase status is tracked as `running`, `completed`, `interrupted`, or `skipped`. Completed phases are not re-run by `-from-phase`.
-
----
-
-## Scope
-
-On first run, recon_jr prompts to review/edit the scope (populated from `engage_jr`). Scope is stored in `scope.txt` and used to filter all discovered subdomains to in-scope hosts only. Out-of-scope hosts are written to `other/out_of_scope.txt`.
 
 ---
 

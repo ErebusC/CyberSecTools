@@ -144,24 +144,8 @@ func buildImplicitScopeContent(engMeta EngagementMeta, allHosts []string) string
 		}
 	}
 
-	// Root domains derived from HTTP targets (so subdomains are in scope)
-	if len(engMeta.HTTPTargets) > 0 {
-		roots := extractRootDomains(engMeta.HTTPTargets)
-		if len(roots) > 0 {
-			fmt.Fprintf(&b, "\n# Root domains (ensures subdomains found in Phase 1 are in scope)\n")
-			seen := make(map[string]struct{})
-			// Don't duplicate entries already written above
-			for _, t := range engMeta.Targets {
-				seen[t] = struct{}{}
-			}
-			for _, r := range roots {
-				if _, ok := seen[r]; !ok {
-					seen[r] = struct{}{}
-					fmt.Fprintln(&b, r)
-				}
-			}
-		}
-	}
+	fmt.Fprintf(&b, "\n# To enable subdomain enumeration across the full root domain, add it explicitly:\n")
+	fmt.Fprintf(&b, "# e.g. add 'erebus.cymru' to scan all subdomains, not just the targets above\n")
 
 	return b.String()
 }
@@ -220,6 +204,75 @@ func openEditorWithContent(content string) (string, error) {
 		return content, fmt.Errorf("reading edited file: %w", err)
 	}
 	return string(data), nil
+}
+
+// reviewAndSaveWebScope offers an interactive prompt to restrict web application
+// testing to a subset of the in-scope hosts. Called when no web_scope.txt
+// exists. inScopeHosts is the list that passed the main scope filter — those
+// are pre-filled in the editor so the user can remove hosts they don't want
+// web-tested. Returns nil (no error) if the user declines, meaning web testing
+// will fall back to the main scope.
+func reviewAndSaveWebScope(engDir string, inScopeHosts []string) (*Scope, error) {
+	fmt.Println()
+	fmt.Println("=== Web Test Scope ===")
+	fmt.Println()
+	fmt.Println("  The main scope controls enumeration and infrastructure scanning (nmap etc.).")
+	fmt.Println("  A separate web test scope lets you restrict web app testing (nuclei,")
+	fmt.Println("  feroxbuster, nikto, etc.) to a subset of those hosts.")
+	fmt.Println()
+	fmt.Printf("  In-scope hosts available for web testing: %d\n", len(inScopeHosts))
+	preview := inScopeHosts
+	if len(preview) > 8 {
+		preview = preview[:8]
+	}
+	for _, h := range preview {
+		fmt.Printf("    %s\n", h)
+	}
+	if len(inScopeHosts) > 8 {
+		fmt.Printf("    ... and %d more\n", len(inScopeHosts)-8)
+	}
+	fmt.Println()
+	fmt.Print("Restrict web testing to a subset of these hosts? [y/N]: ")
+
+	answer := strings.ToLower(strings.TrimSpace(readLine()))
+	if answer != "y" && answer != "yes" {
+		logInfo("web scope: not restricted — web testing targets all in-scope hosts")
+		return nil, nil
+	}
+
+	// Pre-fill with all in-scope hosts so the user can delete what they don't want
+	var b strings.Builder
+	fmt.Fprintf(&b, "# Web test scope for this engagement\n")
+	fmt.Fprintf(&b, "# Delete any hosts you do NOT want web-tested.\n")
+	fmt.Fprintf(&b, "# Same format as scope.txt: hostname, IP, CIDR, IP range, or URL.\n")
+	fmt.Fprintf(&b, "#\n")
+	for _, h := range inScopeHosts {
+		fmt.Fprintln(&b, h)
+	}
+	content := b.String()
+
+	edited, err := openEditorWithContent(content)
+	if err != nil {
+		logWarn("editor failed: %v — web testing will target all in-scope hosts", err)
+		return nil, nil
+	}
+	content = edited
+
+	scope, err := buildScopeFromContent(content)
+	if err != nil {
+		return nil, fmt.Errorf("invalid web scope after editing: %w", err)
+	}
+
+	if !dryRun {
+		webScopePath := filepath.Join(engDir, "web_scope.txt")
+		if err := os.WriteFile(webScopePath, []byte(content), 0644); err != nil {
+			logWarn("could not save web_scope.txt: %v — web scope applies this run only", err)
+		} else {
+			logInfo("web scope saved to %s", webScopePath)
+		}
+	}
+
+	return scope, nil
 }
 
 // resolveEditor returns the editor binary to use, in preference order:

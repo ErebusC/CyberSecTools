@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,7 +18,8 @@ type RunState struct {
 	EngDir         string
 	EngMeta        *EngagementMeta
 	ReconMeta      *ReconMeta
-	Scope          *Scope
+	Scope          *Scope  // enumeration + infra scope
+	WebScope       *Scope  // web app testing scope; nil = same as Scope
 	AllHosts       []string
 	HTTPHosts      []string
 	NoHTTPHosts    []string
@@ -28,6 +30,15 @@ type RunState struct {
 	CMSDetected    map[string]string
 	WAFDetected    map[string]bool
 	Report         *ReportData
+}
+
+// effectiveWebScope returns WebScope when set, otherwise falls back to Scope.
+// All web-testing phases use this so they respect the tighter scope when set.
+func (s *RunState) effectiveWebScope() *Scope {
+	if s.WebScope != nil {
+		return s.WebScope
+	}
+	return s.Scope
 }
 
 // toolBinaries maps tool names to the binary expected in PATH.
@@ -182,8 +193,14 @@ func runPhase1(r *Runner, s *RunState) error {
 
 	merged, err := mergeDiscovered(s.EngDir, s.AllHosts)
 	if err == nil {
-		s.AllHosts = merged
-		s.Report.DiscoveredHosts = merged
+		// Re-filter after merge: discovered_hosts may contain entries from a prior
+		// run with a wider scope. Always enforce the current scope.
+		inScope, oos := filterInScope(merged, s.Scope)
+		if len(oos) > 0 {
+			logInfo("  scope: removed %d previously-discovered hosts now out of scope", len(oos))
+		}
+		s.AllHosts = inScope
+		s.Report.DiscoveredHosts = inScope
 	}
 	s.ReconMeta.DiscoveredHosts = len(s.AllHosts)
 
@@ -365,7 +382,10 @@ func runPhase2(r *Runner, s *RunState) error {
 
 	// httpx — bulk probe all hosts
 	if !interrupted.Load() {
-		hostsFile := filepath.Join(s.EngDir, "hosts")
+		hostsFile := findHostsFile(s.EngDir)
+		if hostsFile == "" {
+			hostsFile = filepath.Join(s.EngDir, "hosts") // fallback for httpx; file may not exist yet
+		}
 		outFile := filepath.Join(otherDir, "httpx.json")
 		httpxArgs := append([]string{
 			"-l", hostsFile, "-o", outFile,
@@ -382,17 +402,25 @@ func runPhase2(r *Runner, s *RunState) error {
 				}
 				if len(s.HTTPHosts) == 0 && len(entries) > 0 {
 					seen := make(map[string]struct{})
+					var discovered []string
 					for _, e := range entries {
 						if e.URL == "" {
 							continue
 						}
 						if _, ok := seen[e.URL]; !ok {
 							seen[e.URL] = struct{}{}
-							s.HTTPHosts = append(s.HTTPHosts, e.URL)
+							discovered = append(discovered, e.URL)
 						}
 					}
+					// Apply web scope: if set, only web-test the subset of
+					// discovered HTTP services that fall within it.
+					webScoped, oos := filterInScope(discovered, s.effectiveWebScope())
+					if len(oos) > 0 {
+						logInfo("  httpx: %d host(s) excluded from web testing by web scope", len(oos))
+					}
+					s.HTTPHosts = webScoped
 					s.Report.HTTPHosts = s.HTTPHosts
-					logDebug("httpx discovered %d live HTTP services", len(s.HTTPHosts))
+					logDebug("httpx discovered %d live HTTP services (%d in web scope)", len(discovered), len(s.HTTPHosts))
 					_ = writeLinesToFile(filepath.Join(s.EngDir, "http_hosts"), s.HTTPHosts)
 				}
 			}
@@ -498,12 +526,39 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 		webPorts []NmapWebPort
 	}
 
-	nmapResults := make(chan nmapResult, len(s.AllHosts))
+	// Deduplicate scan targets by resolved IP. If multiple hostnames (e.g.
+	// erebus.cymru and www.erebus.cymru) resolve to the same IP, scanning each
+	// concurrently hits the same machine multiple times and skews results.
+	// We scan the first hostname that resolves to each IP; others are logged and skipped.
+	type scanTarget struct {
+		hostname string
+		ip       string
+	}
+	seenIPs := make(map[string]string) // ip → first hostname
+	var scanTargets []scanTarget
+	for _, h := range s.AllHosts {
+		addrs, err := net.LookupHost(h)
+		if err != nil || len(addrs) == 0 {
+			// Can't resolve — include as-is so nmap can try
+			scanTargets = append(scanTargets, scanTarget{hostname: h, ip: h})
+			continue
+		}
+		ip := addrs[0]
+		if first, already := seenIPs[ip]; already {
+			logInfo("  nmap: skipping %s (resolves to %s, same IP as %s)", h, ip, first)
+			continue
+		}
+		seenIPs[ip] = h
+		scanTargets = append(scanTargets, scanTarget{hostname: h, ip: ip})
+	}
+
+	nmapResults := make(chan nmapResult, len(scanTargets))
 	var udpRootWarnOnce sync.Once
 	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
 
-	for _, host := range s.AllHosts {
+	for _, target := range scanTargets {
+		host := target.hostname
 		if interrupted.Load() {
 			break
 		}
@@ -749,7 +804,11 @@ func runPhase4(r *Runner, s *RunState) error {
 			katanaRes := r.Run("katana", "katana", katanaArgs, katanaOut)
 			if !katanaRes.Skipped && katanaRes.Err == nil {
 				if endpoints, err := readLines(katanaOut); err == nil {
-					_ = writeDiscoveredEndpoints(s.EngDir, endpoints)
+					inScope, oos := filterEndpointsInScope(endpoints, s.Scope)
+					if len(oos) > 0 {
+						logInfo("  katana: filtered %d out-of-scope URLs", len(oos))
+					}
+					_ = writeDiscoveredEndpoints(s.EngDir, inScope)
 				}
 			}
 
@@ -789,7 +848,11 @@ func runPhase4(r *Runner, s *RunState) error {
 		res := r.Run("waybackurls", "waybackurls", []string{domain}, waybackOut)
 		if !res.Skipped && res.Err == nil {
 			if endpoints, err := readLines(waybackOut); err == nil {
-				_ = writeDiscoveredEndpoints(s.EngDir, endpoints)
+				inScope, oos := filterEndpointsInScope(endpoints, s.Scope)
+				if len(oos) > 0 {
+					logInfo("  waybackurls: filtered %d out-of-scope URLs", len(oos))
+				}
+				_ = writeDiscoveredEndpoints(s.EngDir, inScope)
 			}
 		}
 		r.Delay()
@@ -799,7 +862,11 @@ func runPhase4(r *Runner, s *RunState) error {
 			gauRes := r.Run("gau", "gau", []string{domain, "--o", gauOut}, gauOut)
 			if !gauRes.Skipped && gauRes.Err == nil {
 				if endpoints, err := readLines(gauOut); err == nil {
-					_ = writeDiscoveredEndpoints(s.EngDir, endpoints)
+					inScope, oos := filterEndpointsInScope(endpoints, s.Scope)
+					if len(oos) > 0 {
+						logInfo("  gau: filtered %d out-of-scope URLs", len(oos))
+					}
+					_ = writeDiscoveredEndpoints(s.EngDir, inScope)
 				}
 			}
 			r.Delay()
@@ -1004,7 +1071,11 @@ func runPhase6(r *Runner, s *RunState) error {
 					if !res.Skipped && res.Err == nil {
 						appendToFile(linkfinderOut, stdout)
 						if endpoints, err := parseEndpointLines(stdout); err == nil {
-							_ = writeDiscoveredEndpoints(s.EngDir, endpoints)
+							inScope, oos := filterEndpointsInScope(endpoints, s.Scope)
+							if len(oos) > 0 {
+								logInfo("  linkfinder: filtered %d out-of-scope endpoints", len(oos))
+							}
+							_ = writeDiscoveredEndpoints(s.EngDir, inScope)
 						}
 					}
 					r.Delay()
@@ -1369,7 +1440,11 @@ func runAuthSurface(r *Runner, s *RunState, host, otherDir string) {
 			urls = append(urls, parts[0])
 		}
 	}
-	_ = writeDiscoveredEndpoints(s.EngDir, urls)
+	inScopeURLs, oos := filterEndpointsInScope(urls, s.Scope)
+	if len(oos) > 0 {
+		logInfo("  auth: filtered %d out-of-scope endpoints (e.g. external OIDC provider URLs)", len(oos))
+	}
+	_ = writeDiscoveredEndpoints(s.EngDir, inScopeURLs)
 }
 
 // ---- API surface enumeration ------------------------------------------------
@@ -1495,7 +1570,11 @@ func runAPISurface(r *Runner, s *RunState, host, otherDir string) {
 			urls = append(urls, parts[0])
 		}
 	}
-	_ = writeDiscoveredEndpoints(s.EngDir, urls)
+	inScopeURLs, oos := filterEndpointsInScope(urls, s.Scope)
+	if len(oos) > 0 {
+		logInfo("  api: filtered %d out-of-scope endpoints (e.g. absolute URLs from OpenAPI specs)", len(oos))
+	}
+	_ = writeDiscoveredEndpoints(s.EngDir, inScopeURLs)
 }
 
 // ---- SSRF / open redirect surface mapping -----------------------------------
@@ -1667,7 +1746,11 @@ func runWellKnown(r *Runner, s *RunState, host, otherDir string) {
 	_ = os.WriteFile(outFile, []byte(allContent.String()), 0644)
 
 	if len(allEndpoints) > 0 {
-		_ = writeDiscoveredEndpoints(s.EngDir, allEndpoints)
+		inScope, oos := filterEndpointsInScope(allEndpoints, s.Scope)
+		if len(oos) > 0 {
+			logInfo("  wellknown: filtered %d out-of-scope URLs", len(oos))
+		}
+		_ = writeDiscoveredEndpoints(s.EngDir, inScope)
 	}
 }
 
