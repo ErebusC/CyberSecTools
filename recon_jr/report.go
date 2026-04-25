@@ -306,11 +306,13 @@ func writeAppendix(b *strings.Builder, rd *ReportData) {
 	fmt.Fprintln(b)
 }
 
-// copyReportToNotes copies recon_report.md into <engDir>/notes/ so it is
-// immediately available in the engagement's Obsidian vault.
+// copyReportToNotes copies recon_report.md into <engDir>/notes/<projectName>/
+// so it lands inside the engagement's Obsidian vault subfolder.
+// e.g. /Share/work/erebus_2/notes/erebus_2/recon_report.md
 func copyReportToNotes(engDir string) error {
 	src := filepath.Join(engDir, reportFile)
-	dst := filepath.Join(engDir, "notes", reportFile)
+	projectName := filepath.Base(engDir)
+	dst := filepath.Join(engDir, "notes", projectName, reportFile)
 	if err := ensureDir(filepath.Dir(dst)); err != nil {
 		return err
 	}
