@@ -820,9 +820,7 @@ func runPhase4(r *Runner, s *RunState) error {
 					"-w", s.Cfg.Wordlist,
 					"-x", "php,asp,aspx,jsp,txt,bak,old,conf,config,log",
 					"-o", feroxOut, "--json", "-q", "--no-state",
-					"--threads", "20",
-					"--rate-limit", "50",
-					"--timeout", "5",
+					"--threads", strconv.Itoa(s.Cfg.FeroxThreads),
 					"--extract-links",
 				}, proxyFlagForTool("feroxbuster", s.Cfg.ProxyURL)...)
 				feroxRes := r.RunLong("feroxbuster", "feroxbuster", feroxArgs, feroxOut)

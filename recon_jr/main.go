@@ -374,6 +374,9 @@ func runDepsCheck(cfg *Config, allowIntrusive bool) {
 
 // runPreflightWarnings emits non-fatal warnings about configuration.
 func runPreflightWarnings(cfg *Config, allowIntrusive bool) {
+	if os.Getuid() != 0 {
+		logWarn("not running as root — nmap UDP scans will be skipped. Re-run with sudo for full coverage.")
+	}
 	if !cfg.nessusEnabled() {
 		logWarn("Nessus credentials not configured — Nessus scan will be skipped")
 	}

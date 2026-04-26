@@ -33,6 +33,7 @@ const (
 	defaultToolsTimeoutSecs  = 300
 	defaultFuzzTimeoutSecs   = 1800 // 30 min for feroxbuster, nuclei, testssl
 	defaultToolDelaySecs     = 5
+	defaultFeroxThreads      = 20
 )
 
 // Config holds all runtime configuration for recon_jr.
@@ -50,6 +51,7 @@ type Config struct {
 	NucleiTemplates    string   `json:"nuclei_templates"`
 	ToolsTimeoutSecs   int      `json:"tools_timeout_secs"`
 	FuzzTimeoutSecs    int      `json:"fuzz_timeout_secs"` // timeout for slow tools: feroxbuster, nuclei, testssl
+	FeroxThreads       int      `json:"ferox_threads"`     // feroxbuster --threads (default 20)
 	ToolDelaySecs      int      `json:"tool_delay_secs"`
 	SkipTools          []string `json:"skip_tools"`
 	ProxyURL           string   `json:"proxy_url"`
@@ -90,6 +92,7 @@ func loadConfig(configPath, cliNessusHost, cliWordlist, cliNucleiTemplates, cliP
 		NessusMaxScanMins: defaultNessusMaxScanMins,
 		ToolsTimeoutSecs:  defaultToolsTimeoutSecs,
 		FuzzTimeoutSecs:   defaultFuzzTimeoutSecs,
+		FeroxThreads:      defaultFeroxThreads,
 		ToolDelaySecs:     defaultToolDelaySecs,
 		Wordlist:          "/usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt",
 		VhostWordlist:     "/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt",
@@ -141,6 +144,9 @@ func loadConfig(configPath, cliNessusHost, cliWordlist, cliNucleiTemplates, cliP
 		}
 		if fileCfg.FuzzTimeoutSecs > 0 {
 			cfg.FuzzTimeoutSecs = fileCfg.FuzzTimeoutSecs
+		}
+		if fileCfg.FeroxThreads > 0 {
+			cfg.FeroxThreads = fileCfg.FeroxThreads
 		}
 		if fileCfg.ToolDelaySecs >= 0 {
 			cfg.ToolDelaySecs = fileCfg.ToolDelaySecs
