@@ -137,6 +137,11 @@ func (s *Scope) Contains(host string) bool {
 	}
 	host = strings.ToLower(host)
 
+	// Strip port if present (e.g. "10.0.0.1:8080" → "10.0.0.1", "app.example.com:8443" → "app.example.com").
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+
 	// IP check.
 	if rePlainIP.MatchString(host) {
 		ip := net.ParseIP(host)
