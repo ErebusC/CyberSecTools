@@ -95,6 +95,9 @@ func buildDir(cfg *Config, mode engagementMode, name string) (string, error) {
 		if err := os.MkdirAll(obsidianDir, 0755); err != nil {
 			logWarn("could not create notes vault skeleton: %v", err)
 		}
+		if err := provisionEngagementNotes(base, name); err != nil {
+			logWarn("could not provision engagement notes: %v", err)
+		}
 
 		go createBurpProject(cfg, base, name)
 	}

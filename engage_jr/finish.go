@@ -174,4 +174,14 @@ func finishEngagement(cfg *Config, mode engagementMode, name string) {
 	}
 
 	logInfo("finished: %s", finalPath)
+
+	// Promote redacted lessons to the synced vault (work mode only).
+	if mode == ModeWork {
+		dest, err := promoteRedLessons(engDir, name, reader)
+		if err != nil {
+			logWarn("could not promote lessons to synced vault: %v", err)
+		} else if dest != "" {
+			logInfo("lessons promoted: %s", dest)
+		}
+	}
 }
