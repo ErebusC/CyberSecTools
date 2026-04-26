@@ -69,7 +69,6 @@ func TestBuildDirNonWorkModes(t *testing.T) {
 	}{
 		{ModeTHM, "THM"},
 		{ModeHTB, "HTB"},
-		{ModeExam, "exam"},
 		{ModeSwigger, "swigger"},
 	}
 
@@ -91,7 +90,7 @@ func TestBuildDirNonWorkModes(t *testing.T) {
 				t.Errorf("directory %q does not exist: %v", dir, err)
 			}
 
-			// Non-work modes must not create tool subdirectories.
+			// Lab modes must not create tool subdirectories.
 			for _, sub := range defaultWorkDirs {
 				path := filepath.Join(dir, sub)
 				if _, err := os.Stat(path); err == nil {
@@ -105,6 +104,35 @@ func TestBuildDirNonWorkModes(t *testing.T) {
 				t.Errorf("expected metadata file in non-work dir: %v", err)
 			}
 		})
+	}
+}
+
+func TestBuildDirExam(t *testing.T) {
+	base := t.TempDir()
+	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar", WorkDirs: defaultWorkDirs}
+
+	dir, err := buildDir(cfg, ModeExam, "TestExam")
+	if err != nil {
+		t.Fatalf("buildDir(ModeExam) failed: %v", err)
+	}
+
+	expected := filepath.Join(base, "exam", "TestExam")
+	if dir != expected {
+		t.Errorf("dir = %q, want %q", dir, expected)
+	}
+
+	// Exam mode must create tool subdirectories like work mode.
+	for _, sub := range defaultWorkDirs {
+		path := filepath.Join(dir, sub)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected exam subdir %q to exist: %v", sub, err)
+		}
+	}
+
+	// Metadata file should be written.
+	metaPath := filepath.Join(dir, metaFileName)
+	if _, err := os.Stat(metaPath); err != nil {
+		t.Errorf("expected metadata file %q to exist: %v", metaFileName, err)
 	}
 }
 

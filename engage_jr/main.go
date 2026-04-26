@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -122,6 +123,13 @@ func main() {
 		}
 		logInfo("hosts processed: %d unique (%d with URL, %d without)",
 			stats.Unique, stats.HTTP, stats.Unique-stats.HTTP)
+
+		dst := filepath.Join(engagementDir, filepath.Base(absHostFile))
+		if err := copyFile(absHostFile, dst); err != nil {
+			logWarn("could not copy original host file to engagement directory: %v", err)
+		} else {
+			logDebug("copied original host file to %s", dst)
+		}
 	}
 
 	if dryRun {
@@ -147,6 +155,24 @@ func validateName(name string) error {
 		return fmt.Errorf("invalid engagement name %q — use letters, digits, hyphens, underscores, and dots only", name)
 	}
 	return nil
+}
+
+// copyFile copies src to dst, creating dst if it does not exist.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 // resolveMode maps CLI flags to an engagementMode. Explicit -w takes priority

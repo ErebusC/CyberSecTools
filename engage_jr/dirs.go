@@ -40,7 +40,7 @@ func buildDir(cfg *Config, mode engagementMode, name string) (string, error) {
 
 	if dryRun {
 		logInfo("[dry-run] would create: %s", base)
-		if mode == ModeWork {
+		if mode == ModeWork || mode == ModeExam {
 			workDirs := cfg.WorkDirs
 			if len(workDirs) == 0 {
 				workDirs = defaultWorkDirs
@@ -48,6 +48,8 @@ func buildDir(cfg *Config, mode engagementMode, name string) (string, error) {
 			for _, dir := range workDirs {
 				logInfo("[dry-run] would create: %s/%s", base, dir)
 			}
+		}
+		if mode == ModeWork {
 			logInfo("[dry-run] would create Burp project: %s/burp/%s.burp", base, name)
 			logInfo("[dry-run] would write metadata: %s/%s", base, metaFileName)
 		}
@@ -71,7 +73,7 @@ func buildDir(cfg *Config, mode engagementMode, name string) (string, error) {
 		logWarn("could not write engagement metadata: %v", err)
 	}
 
-	if mode == ModeWork {
+	if mode == ModeWork || mode == ModeExam {
 		workDirs := cfg.WorkDirs
 		if len(workDirs) == 0 {
 			workDirs = defaultWorkDirs
@@ -82,7 +84,9 @@ func buildDir(cfg *Config, mode engagementMode, name string) (string, error) {
 				return "", fmt.Errorf("failed to create subdirectory %s: %w", path, err)
 			}
 		}
+	}
 
+	if mode == ModeWork {
 		// Create the notes directory with an Obsidian vault skeleton so the vault
 		// is valid from the first open. The vault is named after the engagement
 		// (not a generic "notes") so the obsidian://open?vault= URI is unambiguous
