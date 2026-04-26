@@ -380,15 +380,21 @@ func runPhase2(r *Runner, s *RunState) error {
 		return err
 	}
 
-	// httpx — bulk probe all hosts
+	// httpx — bulk probe all hosts (including phase 1 subdomain discoveries in s.AllHosts)
 	if !interrupted.Load() {
-		hostsFile := findHostsFile(s.EngDir)
-		if hostsFile == "" {
-			hostsFile = filepath.Join(s.EngDir, "hosts") // fallback for httpx; file may not exist yet
+		// Write the full s.AllHosts list (which includes phase 1 subdomain discoveries)
+		// to a probe file so httpx covers every known host, not just the original hosts file.
+		probeFile := filepath.Join(otherDir, "httpx_probe_list.txt")
+		if err := writeLinesToFile(probeFile, s.AllHosts); err != nil {
+			logWarn("httpx: could not write probe list: %v — falling back to hosts file", err)
+			probeFile = findHostsFile(s.EngDir)
+			if probeFile == "" {
+				probeFile = filepath.Join(s.EngDir, "hosts")
+			}
 		}
 		outFile := filepath.Join(otherDir, "httpx.json")
 		httpxArgs := append([]string{
-			"-l", hostsFile, "-o", outFile,
+			"-l", probeFile, "-o", outFile,
 			"-json", "-title", "-tech-detect", "-status-code", "-web-server",
 			"-location", "-favicon",
 			"-silent",
@@ -400,8 +406,13 @@ func runPhase2(r *Runner, s *RunState) error {
 					s.CMSDetected[host] = cmsType
 					s.Report.CMSDetected[host] = cmsType
 				}
-				if len(s.HTTPHosts) == 0 && len(entries) > 0 {
-					seen := make(map[string]struct{})
+				if len(entries) > 0 {
+					// Deduplicate against existing s.HTTPHosts (important when resuming
+					// with -from-phase 2 so we don't re-add hosts already in memory).
+					seen := make(map[string]struct{}, len(s.HTTPHosts))
+					for _, h := range s.HTTPHosts {
+						seen[h] = struct{}{}
+					}
 					var discovered []string
 					for _, e := range entries {
 						if e.URL == "" {
@@ -412,20 +423,28 @@ func runPhase2(r *Runner, s *RunState) error {
 							discovered = append(discovered, e.URL)
 						}
 					}
-					// Apply web scope: if set, only web-test the subset of
-					// discovered HTTP services that fall within it.
-					webScoped, oos := filterInScope(discovered, s.effectiveWebScope())
-					if len(oos) > 0 {
-						logInfo("  httpx: %d host(s) excluded from web testing by web scope", len(oos))
+					if len(discovered) > 0 {
+						// Apply web scope: if set, only web-test the subset of
+						// discovered HTTP services that fall within it.
+						webScoped, oos := filterInScope(discovered, s.effectiveWebScope())
+						if len(oos) > 0 {
+							logInfo("  httpx: %d host(s) excluded from web testing by web scope", len(oos))
+						}
+						s.HTTPHosts = append(s.HTTPHosts, webScoped...)
+						s.Report.HTTPHosts = s.HTTPHosts
+						logDebug("httpx discovered %d new live HTTP services (%d in web scope)", len(discovered), len(webScoped))
+						_ = writeLinesToFile(filepath.Join(s.EngDir, "http_hosts"), s.HTTPHosts)
 					}
-					s.HTTPHosts = webScoped
-					s.Report.HTTPHosts = s.HTTPHosts
-					logDebug("httpx discovered %d live HTTP services (%d in web scope)", len(discovered), len(s.HTTPHosts))
-					_ = writeLinesToFile(filepath.Join(s.EngDir, "http_hosts"), s.HTTPHosts)
 				}
 			}
 		}
 		r.Delay()
+	}
+
+	// Re-filter http_hosts through current scope before any tool reads it.
+	// Matters when resuming with -from-phase 2 after scope changes.
+	if _, err := refreshHTTPHostsFile(s); err != nil {
+		logWarn("scope: could not refresh http_hosts: %v", err)
 	}
 
 	// whatweb — technology fingerprinting + version disclosures
@@ -519,55 +538,57 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 	coveredWebPorts := buildCoveredWebPorts(s.HTTPHosts)
 
 	// nmap — two-pass TCP (fast port discovery → detailed scan on open ports)
-	// + UDP top-20. All hosts scanned concurrently, max 3 at a time.
+	// + UDP top-20. IP groups run concurrently (max 3 at a time); hosts within
+	// a group run sequentially so the same IP is never hit by parallel scans.
 	type nmapResult struct {
 		host     string
 		findings []Finding
 		webPorts []NmapWebPort
 	}
 
-	// Deduplicate scan targets by resolved IP. If multiple hostnames (e.g.
-	// erebus.cymru and www.erebus.cymru) resolve to the same IP, scanning each
-	// concurrently hits the same machine multiple times and skews results.
-	// We scan the first hostname that resolves to each IP; others are logged and skipped.
-	type scanTarget struct {
-		hostname string
-		ip       string
+	// Group hosts by resolved IP so we only run nmap once per machine. Hosts
+	// that share an IP are collected as aliases — nmap is skipped for them but
+	// they still receive web-port findings, and all other tools run against
+	// them normally in their own phases.
+	type ipGroup struct {
+		ip      string
+		primary string   // the host nmap actually scans
+		aliases []string // same machine; nmap skipped, web ports attributed
 	}
-	seenIPs := make(map[string]string) // ip → first hostname
-	var scanTargets []scanTarget
+	var ipOrder []string
+	ipGroups := make(map[string]*ipGroup)
 	for _, h := range s.AllHosts {
 		addrs, err := net.LookupHost(h)
-		if err != nil || len(addrs) == 0 {
-			// Can't resolve — include as-is so nmap can try
-			scanTargets = append(scanTargets, scanTarget{hostname: h, ip: h})
-			continue
+		ip := h // fallback for unresolvable hosts
+		if err == nil && len(addrs) > 0 {
+			ip = addrs[0]
 		}
-		ip := addrs[0]
-		if first, already := seenIPs[ip]; already {
-			logInfo("  nmap: skipping %s (resolves to %s, same IP as %s)", h, ip, first)
-			continue
+		if g, exists := ipGroups[ip]; exists {
+			g.aliases = append(g.aliases, h)
+		} else {
+			ipGroups[ip] = &ipGroup{ip: ip, primary: h}
+			ipOrder = append(ipOrder, ip)
 		}
-		seenIPs[ip] = h
-		scanTargets = append(scanTargets, scanTarget{hostname: h, ip: ip})
 	}
 
-	nmapResults := make(chan nmapResult, len(scanTargets))
+	// Buffer is large enough for one result per host (primary + all aliases).
+	nmapResults := make(chan nmapResult, len(s.AllHosts))
 	var udpRootWarnOnce sync.Once
 	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
 
-	for _, target := range scanTargets {
-		host := target.hostname
+	for _, ip := range ipOrder {
+		group := ipGroups[ip]
 		if interrupted.Load() {
 			break
 		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(h string) {
+		go func(g *ipGroup) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
+			h := g.primary
 			safe := sanitizeForFilename(h)
 			var allFindings []Finding
 			var webPorts []NmapWebPort
@@ -622,11 +643,22 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 			}
 
 			nmapResults <- nmapResult{host: h, findings: allFindings, webPorts: webPorts}
-		}(host)
+
+			// Aliases share the same IP — nmap would produce identical results.
+			// Skip the scan but attribute any web-port findings to each alias so
+			// non-standard port discoveries are recorded against every hostname.
+			// All other tools (ferox, nuclei, katana, etc.) run against aliases
+			// independently via s.HTTPHosts in their own phases.
+			for _, alias := range g.aliases {
+				logInfo("  nmap: skipping scan of %s — same IP (%s) as %s; web-port findings attributed, other tools unaffected", alias, g.ip, h)
+				nmapResults <- nmapResult{host: alias, findings: nil, webPorts: webPorts}
+			}
+		}(group)
 	}
 	wg.Wait()
 	close(nmapResults)
 
+	var newWebHosts []string
 	for result := range nmapResults {
 		s.Report.AddFindings(result.findings)
 		for _, wp := range result.webPorts {
@@ -636,11 +668,37 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 					Tool:     "nmap",
 					Host:     wp.URL(result.host),
 					Category: "Network Exposure",
-					Title:    fmt.Sprintf("Web service on port %d — not in web scan scope", wp.Port),
-					Detail:   fmt.Sprintf("nmap identified %s on port %d/%s — verify whether this URL is in scope for testing", strings.TrimSpace(wp.Service), wp.Port, wp.Proto),
+					Title:    fmt.Sprintf("Web service on non-standard port %d", wp.Port),
+					Detail:   fmt.Sprintf("nmap identified %s on port %d/%s — adding to web scan targets", strings.TrimSpace(wp.Service), wp.Port, wp.Proto),
 					Severity: SevInfo,
 				})
+				newWebHosts = append(newWebHosts, wp.URL(result.host))
 			}
+		}
+	}
+
+	// Add nmap-discovered non-standard-port web services to s.HTTPHosts so that
+	// phases 4+ (ferox, nuclei, katana, nikto, etc.) pick them up automatically.
+	if len(newWebHosts) > 0 {
+		webScoped, oos := filterInScope(newWebHosts, s.effectiveWebScope())
+		if len(oos) > 0 {
+			logInfo("  nmap: %d web service(s) excluded from web testing by scope", len(oos))
+		}
+		existing := make(map[string]struct{}, len(s.HTTPHosts))
+		for _, h := range s.HTTPHosts {
+			existing[h] = struct{}{}
+		}
+		var added []string
+		for _, h := range webScoped {
+			if _, ok := existing[h]; !ok {
+				s.HTTPHosts = append(s.HTTPHosts, h)
+				added = append(added, h)
+			}
+		}
+		if len(added) > 0 {
+			logInfo("  nmap: adding %d non-standard-port web service(s) to scan targets: %s", len(added), strings.Join(added, ", "))
+			s.Report.HTTPHosts = s.HTTPHosts
+			_ = writeLinesToFile(filepath.Join(s.EngDir, "http_hosts"), s.HTTPHosts)
 		}
 	}
 
@@ -679,6 +737,31 @@ func runPhase3(r *Runner, s *RunState, noNessus bool) error {
 }
 
 // buildCoveredWebPorts returns a "host:port" set of web services already being tested.
+// refreshHTTPHostsFile reads http_hosts from disk, re-filters it through the
+// effective web scope, and rewrites the file if any entries were removed.
+// Returns the (possibly pruned) host list. Safe to call when the file does not
+// yet exist — returns nil, nil in that case.
+// This guards against stale entries when the user resumes with -from-phase N
+// after scope.txt or web_scope.txt has changed.
+func refreshHTTPHostsFile(s *RunState) ([]string, error) {
+	path := filepath.Join(s.EngDir, "http_hosts")
+	raw, err := readLines(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	inScope, oos := filterInScope(raw, s.effectiveWebScope())
+	if len(oos) > 0 {
+		logWarn("scope: removed %d out-of-scope host(s) from http_hosts before scanning", len(oos))
+		if err := writeLinesToFile(path, inScope); err != nil {
+			return nil, fmt.Errorf("rewriting http_hosts: %w", err)
+		}
+	}
+	return inScope, nil
+}
+
 func buildCoveredWebPorts(httpHosts []string) map[string]struct{} {
 	covered := make(map[string]struct{})
 	for _, h := range httpHosts {
@@ -938,34 +1021,43 @@ func runPhase5(r *Runner, s *RunState) error {
 		httpHostsFile := filepath.Join(s.EngDir, "http_hosts")
 		outFile := filepath.Join(otherDir, "nuclei.json")
 
-		nucleiArgs := []string{
-			"-l", httpHostsFile,
-			"-severity", "critical,high,medium",
-			"-exclude-tags", "exploit,dos",
-			"-je", outFile,
-			"-follow-redirects",
-			"-retries", "2",
-			"-silent",
-		}
-		if !s.AllowIntrusive {
-			nucleiArgs = append(nucleiArgs, "-exclude-tags", "fuzz")
-		}
-		if s.Cfg.NucleiTemplates != "" {
-			if _, err := os.Stat(s.Cfg.NucleiTemplates); err == nil {
-				nucleiArgs = append(nucleiArgs, "-t", s.Cfg.NucleiTemplates)
-			} else {
-				logWarn("nuclei: templates dir %q not found — using nuclei built-in templates", s.Cfg.NucleiTemplates)
+		// Re-filter http_hosts through current scope before invoking nuclei.
+		// Stale entries from a prior run with a wider scope must not reach nuclei.
+		scoped, err := refreshHTTPHostsFile(s)
+		if err != nil {
+			logWarn("nuclei: could not refresh http_hosts: %v — skipping", err)
+		} else if len(scoped) == 0 {
+			logInfo("nuclei: no in-scope HTTP hosts — skipping")
+		} else {
+			nucleiArgs := []string{
+				"-l", httpHostsFile,
+				"-severity", "critical,high,medium",
+				"-exclude-tags", "exploit,dos",
+				"-je", outFile,
+				"-follow-redirects",
+				"-retries", "2",
+				"-silent",
 			}
-		}
-		nucleiArgs = append(nucleiArgs, proxyFlagForTool("nuclei", s.Cfg.ProxyURL)...)
+			if !s.AllowIntrusive {
+				nucleiArgs = append(nucleiArgs, "-exclude-tags", "fuzz")
+			}
+			if s.Cfg.NucleiTemplates != "" {
+				if _, err := os.Stat(s.Cfg.NucleiTemplates); err == nil {
+					nucleiArgs = append(nucleiArgs, "-t", s.Cfg.NucleiTemplates)
+				} else {
+					logWarn("nuclei: templates dir %q not found — using nuclei built-in templates", s.Cfg.NucleiTemplates)
+				}
+			}
+			nucleiArgs = append(nucleiArgs, proxyFlagForTool("nuclei", s.Cfg.ProxyURL)...)
 
-		res := r.RunLong("nuclei", "nuclei", nucleiArgs, outFile)
-		if !res.Skipped && res.Err == nil {
-			if findings, err := ParseNuclei(outFile, ""); err == nil {
-				s.Report.AddFindings(findings)
+			res := r.RunLong("nuclei", "nuclei", nucleiArgs, outFile)
+			if !res.Skipped && res.Err == nil {
+				if findings, err := ParseNuclei(outFile, ""); err == nil {
+					s.Report.AddFindings(findings)
+				}
 			}
+			r.Delay()
 		}
-		r.Delay()
 	}
 
 	// nikto — one per HTTP host
@@ -1043,6 +1135,12 @@ func runPhase6(r *Runner, s *RunState) error {
 	markPhaseStarted(s.ReconMeta, "phase6")
 
 	otherDir := filepath.Join(s.EngDir, "other")
+
+	// Re-filter http_hosts through current scope before any tool reads it.
+	// Matters when resuming with -from-phase 6 after scope changes.
+	if _, err := refreshHTTPHostsFile(s); err != nil {
+		logWarn("scope: could not refresh http_hosts: %v", err)
+	}
 
 	// subjs — extract JS URLs from all discovered endpoints
 	jsURLsFile := filepath.Join(otherDir, "js_urls.txt")
