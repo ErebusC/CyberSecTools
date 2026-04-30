@@ -1,0 +1,1104 @@
+/* ============================================================
+   EREBUS DESIGN SYSTEM — base stylesheet
+   Fonts: Cormorant Garamond, Jost, IBM Plex Mono
+   Self-host woff2 files in /static/fonts/
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   FONT FACES
+   ------------------------------------------------------------ */
+
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url('/fonts/cormorant-garamond-300.woff2') format('woff2');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url('/fonts/cormorant-garamond-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Jost';
+  src: url('/fonts/jost-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Jost';
+  src: url('/fonts/jost-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Jost';
+  src: url('/fonts/jost-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ------------------------------------------------------------
+   FLUID BASE FONT SIZE
+
+   Drives all rem-based scaling. The formula uses calc(13px + 0.55vw)
+   so the fluid range begins at ~364px — phones and tablets scale
+   properly rather than staying pinned at the floor.
+
+     360px  viewport → 15px  (clamped min)
+     480px  viewport → 15.6px
+     768px  viewport → 17.2px
+     1080px viewport → 18.9px
+     1440px viewport → 20.9px
+     1920px viewport → 23.6px
+     2560px viewport → 26px  (clamped max)
+     3840px viewport → 26px  (clamped max)
+
+   Note: Windows at 100% scaling on a 4K panel uses the full
+   3840px viewport width. At 150% scaling it uses ~2560px.
+   Both cases now produce comfortably large base sizes.
+   ------------------------------------------------------------ */
+
+html {
+  font-size: clamp(15px, calc(13px + 0.55vw), 26px);
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+/* ------------------------------------------------------------
+   TOKENS
+   ------------------------------------------------------------ */
+
+:root {
+  /* colour */
+  --bg:          #080B11;
+  --surface:     #0C1220;
+  --elevated:    #111B2E;
+  --border:      #1A2B42;
+  --border-mid:  #243550;
+  --accent:      #3B82F6;
+  --accent-dim:  #93C5FD;
+  --text:        #E8F0FC;
+  --text-muted:  #D0DCF0;
+  --text-dim:    #4A6480;
+  --text-faint:  #2A4060;
+
+  /* typography */
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-body:    'Jost', system-ui, sans-serif;
+  --font-mono:    'IBM Plex Mono', 'Courier New', monospace;
+
+  /* spacing — rem, scales with fluid base */
+  --space-xs:  0.25rem;
+  --space-sm:  0.5rem;
+  --space-md:  1rem;
+  --space-lg:  1.75rem;
+  --space-xl:  3rem;
+  --space-2xl: 4.5rem;
+
+  /* layout */
+  --max-width: clamp(900px, 80vw, 1700px);
+  --gutter:    clamp(1rem, 3vw, 3.75rem);
+}
+
+/* ------------------------------------------------------------
+   RESET
+   ------------------------------------------------------------ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  font-weight: 400;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul, ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+img, svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ------------------------------------------------------------
+   LAYOUT
+   ------------------------------------------------------------ */
+
+.container {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.section {
+  padding: var(--space-xl) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+/* ------------------------------------------------------------
+   TOP STRIPE
+   ------------------------------------------------------------ */
+
+.top-stripe {
+  height: 3px;
+  background: var(--accent);
+}
+
+/* ------------------------------------------------------------
+   NAV
+   ------------------------------------------------------------ */
+
+.nav {
+  border-bottom: 1px solid var(--border);
+  padding: 1.125rem 0;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 100;
+}
+
+.nav__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nav__logo {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+.nav__logo-mark {
+  height: 2rem;
+  width: auto;
+}
+
+.nav__logo-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.nav__logo-name {
+  font-family: var(--font-body);
+  font-weight: 700;
+  font-size: 1rem;
+  letter-spacing: 0.18em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.nav__logo-sub {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: 0.625rem;
+  letter-spacing: 0.28em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  margin-top: 0.2rem;
+}
+
+.nav__links {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+}
+
+.nav__search-item {
+  display: flex;
+  align-items: center;
+  margin-left: 0.5rem;
+}
+
+.nav__links a {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  transition: color 0.15s ease;
+  padding: 0.5rem 0;
+}
+
+.nav__links a:hover,
+.nav__links a[aria-current="page"] {
+  color: var(--accent-dim);
+}
+
+.nav__toggle {
+  display: none;
+  flex-direction: column;
+  gap: 0.35rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  background: none;
+  border: none;
+}
+
+.nav__toggle-bar {
+  width: 1.5rem;
+  height: 1px;
+  background: var(--text-muted);
+  transition: background 0.15s ease;
+}
+
+.nav__toggle:hover .nav__toggle-bar {
+  background: var(--accent-dim);
+}
+
+/* ------------------------------------------------------------
+   SECTION LABELS
+   ------------------------------------------------------------ */
+
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  margin-bottom: 1.5rem;
+}
+
+/* ------------------------------------------------------------
+   EYEBROW
+   ------------------------------------------------------------ */
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: var(--accent);
+  margin-bottom: 1.25rem;
+}
+
+/* ------------------------------------------------------------
+   DISPLAY HEADINGS
+   ------------------------------------------------------------ */
+
+.heading-display {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  line-height: 0.97;
+  color: var(--text);
+  letter-spacing: -0.02em;
+}
+
+.heading-display em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.heading-section {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.heading-card {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 1.5rem;
+  color: var(--text);
+  line-height: 1.2;
+  margin-bottom: 0.625rem;
+}
+
+/* ------------------------------------------------------------
+   ACCENT RULE
+   ------------------------------------------------------------ */
+
+.rule {
+  width: 2.25rem;
+  height: 2px;
+  background: var(--accent);
+  margin: 1.5rem 0;
+  border: none;
+}
+
+/* ------------------------------------------------------------
+   BODY COPY
+   ------------------------------------------------------------ */
+
+.body-copy {
+  font-size: 1rem;
+  color: var(--text-dim);
+  line-height: 1.65;
+  max-width: 34rem;
+}
+
+/* ------------------------------------------------------------
+   HERO GRID
+   ------------------------------------------------------------ */
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 22rem;
+  gap: var(--space-xl);
+  align-items: start;
+}
+
+.hero-grid > * {
+  min-width: 0;
+}
+
+/* ------------------------------------------------------------
+   BUTTONS / CTAS
+   ------------------------------------------------------------ */
+
+.btn {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  padding: 0.75rem 1.375rem;
+  border: 1px solid;
+  display: inline-block;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  min-height: 2.75rem;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.btn:hover {
+  opacity: 0.8;
+}
+
+.btn--primary {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn--secondary {
+  color: var(--accent-dim);
+  background: transparent;
+  border-color: var(--border);
+}
+
+.btn-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ------------------------------------------------------------
+   CARDS
+   ------------------------------------------------------------ */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  padding: 1.375rem;
+}
+
+.card__tag {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin-bottom: 0.625rem;
+}
+
+.card__body {
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.card__link {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--accent);
+  letter-spacing: 0.1em;
+  margin-top: 1rem;
+  display: block;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.875rem;
+}
+
+/* ------------------------------------------------------------
+   STAT BAR
+   ------------------------------------------------------------ */
+
+.stat-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.stat {
+  padding: 0 1.375rem;
+  border-left: 1px solid var(--border);
+}
+
+.stat:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+
+.stat__number {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: 2.5rem;
+  color: var(--text);
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.stat__label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------
+   ENTRY LIST
+   ------------------------------------------------------------ */
+
+.entry-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.entry {
+  padding: 1.375rem 0;
+  border-bottom: 1px solid var(--border);
+  display: grid;
+  grid-template-columns: 1fr 12rem;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.entry:last-child {
+  border-bottom: none;
+}
+
+.entry__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.entry__title {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 1rem;
+  color: var(--text);
+  margin-bottom: 0.2rem;
+}
+
+.entry__org {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+.entry__dates {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.entry__body {
+  font-size: 0.9375rem;
+  color: var(--text-dim);
+  line-height: 1.65;
+  margin-top: 0.625rem;
+}
+
+/* ------------------------------------------------------------
+   CERT / SKILL TAGS
+   ------------------------------------------------------------ */
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  padding: 0.375rem 0.75rem;
+}
+
+.tag--accent {
+  color: var(--accent-dim);
+  border-color: var(--border-mid);
+}
+
+/* ------------------------------------------------------------
+   TERMINAL BLOCK
+   ------------------------------------------------------------ */
+
+.terminal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+  overflow-x: auto;
+}
+
+.terminal__bar {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  background: var(--border);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.terminal__dot--active {
+  background: var(--accent);
+}
+
+.terminal__title {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  margin-left: 0.25rem;
+}
+
+.terminal__body {
+  padding: 1rem;
+}
+
+.terminal__prompt { color: var(--accent); }
+.terminal__cmd    { color: var(--text); }
+.terminal__out    { color: var(--text-dim); }
+.terminal__ok     { color: #4ADE80; }
+.terminal__err    { color: #F87171; }
+
+/* ------------------------------------------------------------
+   DOMAIN BAR
+   ------------------------------------------------------------ */
+
+.domain-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-top: 1px solid var(--border);
+}
+
+.domain-bar__item {
+  padding: 0.875rem 1.375rem;
+  border-right: 1px solid var(--border);
+}
+
+.domain-bar__item:first-child {
+  padding-left: 0;
+}
+
+.domain-bar__item:last-child {
+  border-right: none;
+}
+
+.domain-bar__name {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.875rem;
+  letter-spacing: 0.1em;
+  color: var(--accent-dim);
+  margin-bottom: 0.25rem;
+}
+
+.domain-bar__desc {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+}
+
+/* ------------------------------------------------------------
+   FOOTER
+   ------------------------------------------------------------ */
+
+.footer {
+  padding: 1.375rem 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.footer__copy {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  color: var(--text-dim);
+}
+
+.footer__links {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.footer__links a {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  letter-spacing: 0.1em;
+  transition: color 0.15s ease;
+  padding: 0.25rem 0;
+}
+
+.footer__links a:hover {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------
+   SEARCH
+
+   Two variants:
+     .search-nav   — compact, lives inside .nav__links as the
+                     last list item. Toggles with the mobile
+                     nav for free.
+     .search-hero  — centred, page-level. Use inside a .section
+                     or hero block in place of CTAs.
+   ------------------------------------------------------------ */
+
+/* -- Nav search -------------------------------------------- */
+
+.search-nav {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  background: var(--elevated);
+  height: 2rem;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease;
+}
+
+.search-nav:focus-within {
+  border-color: var(--border-mid);
+}
+
+.search-nav__input {
+  background: transparent;
+  border: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  padding: 0 0.75rem;
+  width: 13rem;
+  min-width: 0;
+}
+
+.search-nav__input::placeholder {
+  color: var(--text-faint);
+}
+
+.search-nav__input::-webkit-search-cancel-button,
+.search-nav__input::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+
+.search-nav__btn {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  padding: 0 0.75rem;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.search-nav__btn:hover {
+  color: var(--accent-dim);
+  background: var(--surface);
+}
+
+/* -- Hero search ------------------------------------------- */
+
+.search-hero {
+  text-align: center;
+  max-width: 44rem;
+  margin: 0 auto;
+}
+
+.search-hero .eyebrow {
+  margin-bottom: 1.25rem;
+}
+
+.search-hero__heading {
+  font-family: var(--font-display);
+  font-weight: 300;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  color: var(--text);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin-bottom: 2rem;
+}
+
+.search-hero__form {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border-mid);
+  background: var(--elevated);
+  transition: border-color 0.15s ease;
+}
+
+.search-hero__form:focus-within {
+  border-color: var(--accent);
+}
+
+.search-hero__input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  letter-spacing: 0.05em;
+  color: var(--text);
+  padding: 0.875rem 1.25rem;
+  min-width: 0;
+}
+
+.search-hero__input::placeholder {
+  color: var(--text-dim);
+}
+
+.search-hero__input::-webkit-search-cancel-button,
+.search-hero__input::-webkit-search-decoration {
+  -webkit-appearance: none;
+}
+
+.search-hero__btn {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  padding: 0 1.5rem;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.search-hero__btn:hover {
+  opacity: 0.85;
+}
+
+.search-hero__hint {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+  margin-top: 0.875rem;
+}
+
+/* ============================================================
+   RESPONSIVE
+   Structural layout changes only — font sizes scale
+   automatically via the fluid html font-size.
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   TABLET  (max-width: 768px)
+   ------------------------------------------------------------ */
+
+@media (max-width: 768px) {
+  .nav__toggle {
+    display: flex;
+  }
+
+  .nav__links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    flex-direction: column;
+    gap: 0;
+    padding: 0.5rem 0;
+    z-index: 99;
+  }
+
+  .nav__links a {
+    padding: 0.875rem var(--gutter);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.875rem;
+  }
+
+  .nav__links a:last-child {
+    border-bottom: none;
+  }
+
+  .nav__links--open {
+    display: flex;
+  }
+
+  .nav__search-item {
+    padding: 0.875rem var(--gutter);
+    border-bottom: 1px solid var(--border);
+    margin-left: 0;
+  }
+
+  .nav__search-item .search-nav {
+    width: 100%;
+    height: 2.5rem;
+    border: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav__search-item .search-nav__input {
+    width: auto;
+    flex: 1;
+    font-size: 0.875rem;
+  }
+
+  .search-hero__form {
+    flex-direction: column;
+  }
+
+  .search-hero__btn {
+    padding: 0.875rem;
+    border-top: 1px solid var(--border-mid);
+  }
+
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-lg);
+  }
+
+  .card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-bar {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+  }
+
+  .stat {
+    padding: 0 0 0 1.375rem;
+  }
+
+  .stat:nth-child(odd) {
+    border-left: none;
+    padding-left: 0;
+  }
+
+  .stat:nth-child(3),
+  .stat:nth-child(4) {
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+
+  .domain-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .domain-bar__item:nth-child(2) {
+    border-right: none;
+  }
+
+  .domain-bar__item:nth-child(3),
+  .domain-bar__item:nth-child(4) {
+    border-top: 1px solid var(--border);
+    padding-top: 0.875rem;
+  }
+
+  .domain-bar__item:nth-child(4) {
+    border-right: none;
+  }
+
+  .body-copy {
+    max-width: 100%;
+  }
+}
+
+/* ------------------------------------------------------------
+   MOBILE  (max-width: 480px)
+   ------------------------------------------------------------ */
+
+@media (max-width: 480px) {
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .entry {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .entry__meta {
+    align-items: flex-start;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .entry__dates {
+    text-align: left;
+  }
+
+  .domain-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .domain-bar__item {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 0.875rem 0;
+  }
+
+  .domain-bar__item:last-child {
+    border-bottom: none;
+  }
+
+  .footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .btn-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .btn-row .btn {
+    text-align: center;
+  }
+
+  .search-hero__hint {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------
+   PRINT
+   ------------------------------------------------------------ */
+
+@media print {
+  .nav,
+  .top-stripe,
+  .btn,
+  .btn-row,
+  .domain-bar,
+  .footer__links {
+    display: none;
+  }
+
+  body {
+    background: white;
+    color: #111;
+    font-size: 11pt;
+  }
+
+  .heading-display {
+    font-size: 28pt;
+    color: #111;
+  }
+
+  .entry__title {
+    color: #111;
+  }
+
+  .entry__org,
+  .entry__dates,
+  .section-label,
+  .eyebrow {
+    color: #444;
+  }
+
+  .tag {
+    border-color: #ccc;
+    color: #333;
+  }
+
+  .section {
+    border-bottom-color: #ddd;
+    padding: 1rem 0;
+  }
+}

@@ -1,55 +1,487 @@
+/* ============================================================
+   CLICKJACKER — all tool-specific styles
+   Requires index.css (Erebus design system) to be loaded first
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   BODY OVERRIDE
+   ------------------------------------------------------------ */
+
+body {
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------
+   NAV OVERRIDE  (centred tool name, no branding for this tool)
+   ------------------------------------------------------------ */
+
+.nav {
+  padding: 10px 0;
+}
+
+.nav__inner {
+  justify-content: center;
+  position: relative;
+}
+
+.nav__logo {
+  display: none;
+}
+
+.nav__tool-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.nav__tool-name span {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------
+   WRAPPER
+   ------------------------------------------------------------ */
+
+#wrapper {
+  width: 100vw;
+  height: calc(100vh - 52px);
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------
+   CONTROLS
+   ------------------------------------------------------------ */
+
+#controls {
+  position: absolute;
+  left: 1%;
+  top: 0;
+  width: 73%;
+  box-sizing: border-box;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+#controls input:not([type="submit"]) {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+}
+
+#controls input:not([type="submit"]):focus {
+  border-color: var(--accent);
+}
+
+#controls button {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 6px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid var(--border-mid);
+  background: transparent;
+  color: var(--accent-dim);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+#controls button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+#overlay-reset {
+  border-color: #F87171;
+  color: #F87171;
+}
+
+#overlay-reset:hover {
+  background: rgba(248, 113, 113, 0.1);
+  color: #FCA5A5;
+}
+
+/* ------------------------------------------------------------
+   IFRAME
+   ------------------------------------------------------------ */
+
+#wrapper iframe {
+  position: absolute;
+  top: 13%;
+  left: 1%;
+  width: 73%;
+  height: 87%;
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------
+   HISTORY PANEL
+   ------------------------------------------------------------ */
+
+#history-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24%;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-sizing: border-box;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+#history-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  text-transform: lowercase;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+#url-history {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#url-history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#url-history li:last-child {
+  border-bottom: none;
+}
+
+#url-history .url-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+#url-history .url-load {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--accent-dim);
+  border: 1px solid var(--border-mid);
+  transition: border-color 0.15s ease;
+}
+
+#url-history .url-load:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------
+   OVERLAY  (injected clickjacking credential form)
+   ------------------------------------------------------------ */
+
 #overlay {
-	position: absolute;
-	top: 13%;
-	left: 1%;
-	width: 73%;
-	height: 87%;
-	z-index: 10;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background-color: rgba(66, 85, 99, 0.88);
-	box-sizing: border-box;
+  position: absolute;
+  top: 13%;
+  left: 1%;
+  width: 73%;
+  height: 87%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 11, 17, 0.85);
+  box-sizing: border-box;
 }
 
 #overlay form {
-	background: white;
-	color: #2f3640;
-	padding: 2em 2.5em;
-	border: 2px solid #2f3640;
-	border-radius: 4px;
-	font-size: 1.1em;
-	min-width: 260px;
-	display: flex;
-	flex-direction: column;
-	gap: 0.4em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  padding: 28px 32px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 #overlay form label {
-	font-weight: bold;
-	margin-top: 0.4em;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--accent-dim);
+  margin-top: 14px;
+  margin-bottom: 6px;
+  text-transform: lowercase;
+}
+
+#overlay form label:first-of-type {
+  margin-top: 0;
 }
 
 #overlay form input[type="text"],
 #overlay form input[type="password"] {
-	width: 100%;
-	padding: 0.4em;
-	font-size: 1em;
-	box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  box-sizing: border-box;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+}
+
+#overlay form input[type="text"]:focus,
+#overlay form input[type="password"]:focus {
+  border-color: var(--accent);
 }
 
 #overlay form input[type="submit"] {
-	margin-top: 0.8em;
-	width: 100%;
-	padding: 0.5em;
-	font-size: 1em;
-	cursor: pointer;
-	background: #425563;
-	color: white;
-	border: none;
-	border-radius: 3px;
+  margin-top: 20px;
+  width: 100%;
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--bg);
+  border: 1px solid var(--accent);
+  transition: opacity 0.15s ease;
 }
 
 #overlay form input[type="submit"]:hover {
-	background: #536575;
+  opacity: 0.85;
+}
+
+/* ============================================================
+   LARGE SCREEN BREAKPOINTS
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   LARGE DESKTOP  (min-width: 1280px)
+   ------------------------------------------------------------ */
+
+@media (min-width: 1280px) {
+  #history-panel {
+    padding: 16px;
+  }
+
+  #controls {
+    padding: 10px 0;
+    gap: 8px;
+  }
+}
+
+/* ------------------------------------------------------------
+   WIDE DESKTOP  (min-width: 1600px)
+   ------------------------------------------------------------ */
+
+@media (min-width: 1600px) {
+  .nav {
+    padding: 12px 0;
+  }
+
+  #wrapper {
+    height: calc(100vh - 58px);
+  }
+
+  .nav__tool-name {
+    font-size: 15px;
+  }
+
+  #controls {
+    padding: 12px 0;
+    gap: 10px;
+  }
+
+  .control-label {
+    font-size: 12px;
+  }
+
+  #controls input:not([type="submit"]) {
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  #controls button {
+    font-size: 12px;
+    padding: 8px 16px;
+  }
+
+  #history-panel {
+    padding: 18px;
+  }
+
+  #history-title {
+    font-size: 12px;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+
+  #url-history li {
+    padding: 10px 0;
+  }
+
+  #url-history .url-label {
+    font-size: 12px;
+  }
+
+  #url-history .url-load {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  #overlay form {
+    min-width: 340px;
+    padding: 32px 40px;
+  }
+
+  #overlay form label {
+    font-size: 12px;
+  }
+
+  #overlay form input[type="text"],
+  #overlay form input[type="password"] {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+
+  #overlay form input[type="submit"] {
+    font-size: 13px;
+    padding: 12px;
+  }
+}
+
+/* ------------------------------------------------------------
+   4K / ULTRA-WIDE  (min-width: 2560px)
+   ------------------------------------------------------------ */
+
+@media (min-width: 2560px) {
+  .nav {
+    padding: 16px 0;
+  }
+
+  #wrapper {
+    height: calc(100vh - 72px);
+  }
+
+  .nav__tool-name {
+    font-size: 18px;
+    letter-spacing: 0.18em;
+  }
+
+  #controls {
+    padding: 16px 0;
+    gap: 12px;
+  }
+
+  .control-row {
+    gap: 12px;
+  }
+
+  .control-label {
+    font-size: 14px;
+  }
+
+  #controls input:not([type="submit"]) {
+    font-size: 15px;
+    padding: 10px 14px;
+  }
+
+  #controls button {
+    font-size: 13px;
+    padding: 10px 20px;
+  }
+
+  #history-panel {
+    padding: 24px;
+  }
+
+  #history-title {
+    font-size: 13px;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+  }
+
+  #url-history li {
+    padding: 12px 0;
+    gap: 12px;
+  }
+
+  #url-history .url-label {
+    font-size: 13px;
+  }
+
+  #url-history .url-load {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  #overlay form {
+    min-width: 420px;
+    padding: 40px 48px;
+  }
+
+  #overlay form label {
+    font-size: 13px;
+    margin-top: 18px;
+    margin-bottom: 8px;
+  }
+
+  #overlay form input[type="text"],
+  #overlay form input[type="password"] {
+    font-size: 15px;
+    padding: 12px 14px;
+  }
+
+  #overlay form input[type="submit"] {
+    font-size: 14px;
+    padding: 14px;
+    margin-top: 24px;
+  }
 }
