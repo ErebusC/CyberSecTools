@@ -41,4 +41,19 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("opacity-slider")!.addEventListener("input", (e) => {
     updateDecoyOpacity((e.target as HTMLInputElement).value);
   });
+
+  const fsBtn = document.getElementById("fullscreen-btn")!;
+  const wrapper = document.getElementById("wrapper")!;
+
+  fsBtn.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+      wrapper.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  });
+
+  document.addEventListener("fullscreenchange", () => {
+    fsBtn.textContent = document.fullscreenElement ? "Exit" : "Fullscreen";
+  });
 });
