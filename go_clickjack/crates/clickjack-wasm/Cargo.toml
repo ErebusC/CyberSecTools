@@ -40,6 +40,7 @@ features = [
   "HtmlTextAreaElement",
   "HtmlUListElement",
   "KeyboardEvent",
+  "Location",
   "MouseEvent",
   "Node",
   "NodeList",

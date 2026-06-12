@@ -155,20 +155,18 @@ fn do_template_change() -> Result<(), JsValue> {
 }
 
 fn apply_template(key: &str, content: &HtmlElement) -> Result<(), JsValue> {
-    let html: std::borrow::Cow<str> = if key == "custom" {
-        // Read the current value of the custom HTML textarea.
+    // Build the HTML string. For the custom template, read from the textarea;
+    // for named templates, convert the Cow to owned so no temporary is borrowed.
+    let html: String = if key == "custom" {
         let doc = document()?;
-        let textarea_val = doc
-            .get_element_by_id("custom-html-input")
+        doc.get_element_by_id("custom-html-input")
             .and_then(|el| el.dyn_into::<HtmlTextAreaElement>().ok())
             .map(|ta| ta.value())
-            .unwrap_or_default();
-        std::borrow::Cow::Owned(textarea_val)
+            .unwrap_or_default()
     } else {
         match DecoyTemplate::from_key(key) {
-            Some(tmpl) => tmpl.html(),
-            // Unknown key: clear the content area.
-            None => std::borrow::Cow::Borrowed(""),
+            Some(tmpl) => tmpl.html().into_owned(),
+            None => String::new(),
         }
     };
 

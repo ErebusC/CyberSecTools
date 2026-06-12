@@ -34,8 +34,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     // All routes must be registered before with_state() freezes the state type.
     let mut router = Router::new()
         .route("/", get(index_handler))
-        .route("/static/{*path}", get(static_handler))
-        .route("/wasm/{*path}", get(wasm_handler));
+        .route("/static/*path", get(static_handler))
+        .route("/wasm/*path", get(wasm_handler));
 
     if has_logo_path {
         router = router.route("/logo-img", get(logo_handler));

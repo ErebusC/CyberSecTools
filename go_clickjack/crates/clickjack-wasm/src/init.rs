@@ -30,13 +30,15 @@ fn do_setup() -> Result<(), JsValue> {
 
     // If the iframe was pre-loaded with a URL (from the server template),
     // register it in history so it appears in the panel on first load.
+    // Compare against the page's own href to avoid adding the tool's URL
+    // when the browser resolves an empty src to the current page address.
     let initial_src = iframe.src();
     if !initial_src.is_empty() && initial_src != "about:blank" {
-        let page_origin = doc
-            .location()
-            .and_then(|l| l.href().ok())
+        let page_href = crate::utils::window()
+            .ok()
+            .and_then(|w| w.location().href().ok())
             .unwrap_or_default();
-        if initial_src != page_origin {
+        if initial_src != page_href {
             let _ = add_to_history(&initial_src);
         }
     }

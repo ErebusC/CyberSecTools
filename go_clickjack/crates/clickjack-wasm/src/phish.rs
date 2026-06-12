@@ -120,9 +120,9 @@ async fn post_credentials(form: HtmlFormElement) -> Result<(), JsValue> {
 
     let form_data = FormData::new_with_form(&form)?;
 
-    let mut opts = RequestInit::new();
-    opts.method("POST");
-    opts.body(Some(form_data.as_ref()));
+    let opts = RequestInit::new();
+    opts.set_method("POST");
+    opts.set_body(form_data.as_ref());
 
     let request = web_sys::Request::new_with_str_and_init(&collab_url, &opts)?;
 
