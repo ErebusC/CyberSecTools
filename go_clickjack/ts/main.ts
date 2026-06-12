@@ -43,17 +43,9 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   const fsBtn = document.getElementById("fullscreen-btn")!;
-  const wrapper = document.getElementById("wrapper")!;
 
   fsBtn.addEventListener("click", () => {
-    if (!document.fullscreenElement) {
-      wrapper.requestFullscreen();
-    } else {
-      document.exitFullscreen();
-    }
-  });
-
-  document.addEventListener("fullscreenchange", () => {
-    fsBtn.textContent = document.fullscreenElement ? "Exit" : "Fullscreen";
+    document.body.classList.toggle("ui-fullscreen");
+    fsBtn.textContent = document.body.classList.contains("ui-fullscreen") ? "Exit" : "Fullscreen";
   });
 });
