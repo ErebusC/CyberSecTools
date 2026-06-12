@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "crates/clickjack-core",
+    "crates/clickjack-wasm",
+    "crates/clickjack-cli",
+]
+resolver = "2"
