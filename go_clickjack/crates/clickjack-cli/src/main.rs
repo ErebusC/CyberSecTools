@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use clickjack_core::Config;
+use clickjack_core::{Config, LogoSource};
 
 use server::AppState;
 
@@ -38,16 +38,22 @@ async fn main() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
+    let logo = resolve_logo(args.logo.as_deref())?;
+
+    let (logo_url, logo_path) = match &logo {
+        Some(LogoSource::RemoteUrl(url)) => (url.clone(), None),
+        Some(LogoSource::LocalFile(path)) => ("/logo-img".to_owned(), Some(path.clone())),
+        None => (String::new(), None),
+    };
+
     let config = Config {
         target_url: args
             .target_url
             .unwrap_or_else(|| "https://economist.com".to_owned()),
-        collab_url: args.collab_url.clone(),
+        collab_url: args.collab_url,
         port: args.port,
-        logo: None,
+        logo,
     };
-
-    let (logo_url, logo_path) = resolve_logo(args.logo.as_deref())?;
 
     let state = Arc::new(AppState {
         target_url: config.target_url.clone(),
@@ -82,45 +88,42 @@ async fn main() -> anyhow::Result<()> {
 
 /// Resolves the logo source from the --logo flag or by scanning the binary directory.
 ///
-/// Returns (template_url, local_file_path). If the logo is a remote URL,
-/// template_url is the URL and local_file_path is None. If it is a local file,
-/// template_url is "/logo-img" and local_file_path holds the path to serve.
-fn resolve_logo(logo_flag: Option<&str>) -> anyhow::Result<(String, Option<PathBuf>)> {
+/// Returns None if no logo is configured or the specified file is not found.
+fn resolve_logo(logo_flag: Option<&str>) -> anyhow::Result<Option<LogoSource>> {
     if let Some(flag) = logo_flag {
         if flag.starts_with("http://") || flag.starts_with("https://") {
-            return Ok((flag.to_owned(), None));
+            return Ok(Some(LogoSource::RemoteUrl(flag.to_owned())));
         }
         let path = PathBuf::from(flag);
         if path.exists() {
-            return Ok(("/logo-img".to_owned(), Some(path)));
+            return Ok(Some(LogoSource::LocalFile(path)));
         }
         tracing::warn!("logo file not found: {}", flag);
-        return Ok((String::new(), None));
+        return Ok(None);
     }
 
-    // Auto-detect a logo file next to the running binary.
+    // Auto-detect a logo file in the same directory as the running binary.
     if let Ok(exe) = std::env::current_exe() {
         let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("."));
         for name in &["logo.svg", "logo.png", "logo.jpg", "logo.jpeg", "logo.gif"] {
             let candidate = dir.join(name);
             if candidate.exists() {
                 tracing::info!("logo auto-detected: {}", candidate.display());
-                return Ok(("/logo-img".to_owned(), Some(candidate)));
+                return Ok(Some(LogoSource::LocalFile(candidate)));
             }
         }
     }
 
-    Ok((String::new(), None))
+    Ok(None)
 }
 
 /// Polls the server address via TCP until it accepts a connection, then returns.
 ///
-/// Gives up after 50 attempts (roughly 5 seconds) to match the Go version's behaviour.
+/// Tries up to 50 times with 100 ms between attempts, matching the Go version's behaviour.
 async fn poll_until_ready(url: &str) {
     use tokio::net::TcpStream;
     use tokio::time::{sleep, Duration};
 
-    // Strip the scheme to get host:port for the TCP check.
     let host_port = url
         .trim_start_matches("http://")
         .trim_start_matches("https://");

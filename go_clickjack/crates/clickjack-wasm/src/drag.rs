@@ -47,17 +47,22 @@ impl Default for DragState {
     }
 }
 
-/// Stores the document-level event listeners that must stay alive for the
-/// overlay's lifetime. Dropping this value removes the listeners.
+/// Owns all event listeners attached by `make_overlay_interactive`.
+///
+/// Dropping this value removes all listeners and cancels any pending hint timer.
+/// The document-level mousemove/mouseup and the per-handle mousedown listeners
+/// are all stored here to avoid leaking their closures.
 pub struct DragCleanup {
+    _dragbar: EventListener,
+    _handles: Vec<EventListener>,
     _mousemove: EventListener,
     _mouseup: EventListener,
 }
 
 thread_local! {
-    /// Holds the active drag cleanup for the single decoy overlay.
+    /// Active drag cleanup for the single decoy overlay.
     static DRAG_CLEANUP: RefCell<Option<DragCleanup>> = RefCell::new(None);
-    /// Holds the pending hint-fade timer so it can be cancelled on interaction.
+    /// Pending hint-fade timer; cancelled on the next drag or resize interaction.
     static HINT_TIMER: RefCell<Option<Timeout>> = RefCell::new(None);
 }
 
@@ -79,12 +84,17 @@ pub fn make_overlay_interactive(overlay: HtmlElement) -> Result<(), JsValue> {
 
     schedule_hint_fade(overlay.clone());
 
-    // Dragbar initiates a move.
-    {
+    // Dragbar initiates a move. Using EventListener so the listener is removed
+    // when DragCleanup is dropped (avoids leaking the closure allocation).
+    let dragbar_listener = {
         let state = Rc::clone(&state);
         let overlay_ref = overlay.clone();
         let iframe_ref = iframe.clone();
-        let cb = Closure::<dyn Fn(MouseEvent)>::new(move |e: MouseEvent| {
+        EventListener::new(&dragbar, "mousedown", move |e| {
+            let e = match e.dyn_ref::<MouseEvent>() {
+                Some(m) => m,
+                None => return,
+            };
             restore_hint(&overlay_ref);
             {
                 let mut s = state.borrow_mut();
@@ -94,49 +104,52 @@ pub fn make_overlay_interactive(overlay: HtmlElement) -> Result<(), JsValue> {
                 s.start_left = overlay_ref.offset_left() as f64;
                 s.start_top = overlay_ref.offset_top() as f64;
             }
-            // Disable iframe pointer events so mouse moves are not swallowed by it.
             let _ = iframe_ref.style().set_property("pointer-events", "none");
             e.prevent_default();
-        });
-        dragbar.add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())?;
-        cb.forget();
-    }
+        })
+    };
 
     // Resize handles for each of the eight compass directions.
+    // All listeners are stored so they are removed when DragCleanup is dropped.
+    let mut handle_listeners: Vec<EventListener> = Vec::with_capacity(8);
     for dir in &["nw", "n", "ne", "e", "se", "s", "sw", "w"] {
         let handle = doc
             .create_element("div")?
             .dyn_into::<HtmlElement>()?;
         handle.set_class_name(&format!("resize-handle resize-{dir}"));
 
-        let state_ref = Rc::clone(&state);
-        let overlay_ref = overlay.clone();
-        let iframe_ref = iframe.clone();
-        let dir_owned = dir.to_string();
-
-        let cb = Closure::<dyn Fn(MouseEvent)>::new(move |e: MouseEvent| {
-            restore_hint(&overlay_ref);
-            {
-                let mut s = state_ref.borrow_mut();
-                s.is_resizing = true;
-                s.resize_n = dir_owned.contains('n');
-                s.resize_s = dir_owned.contains('s');
-                s.resize_e = dir_owned.contains('e');
-                s.resize_w = dir_owned.contains('w');
-                s.start_x = e.client_x() as f64;
-                s.start_y = e.client_y() as f64;
-                s.start_left = overlay_ref.offset_left() as f64;
-                s.start_top = overlay_ref.offset_top() as f64;
-                s.start_w = overlay_ref.offset_width() as f64;
-                s.start_h = overlay_ref.offset_height() as f64;
-            }
-            let _ = iframe_ref.style().set_property("pointer-events", "none");
-            e.prevent_default();
-        });
-        handle.add_event_listener_with_callback("mousedown", cb.as_ref().unchecked_ref())?;
-        cb.forget();
+        let listener = {
+            let state_ref = Rc::clone(&state);
+            let overlay_ref = overlay.clone();
+            let iframe_ref = iframe.clone();
+            let dir_owned = dir.to_string();
+            EventListener::new(&handle, "mousedown", move |e| {
+                let e = match e.dyn_ref::<MouseEvent>() {
+                    Some(m) => m,
+                    None => return,
+                };
+                restore_hint(&overlay_ref);
+                {
+                    let mut s = state_ref.borrow_mut();
+                    s.is_resizing = true;
+                    s.resize_n = dir_owned.contains('n');
+                    s.resize_s = dir_owned.contains('s');
+                    s.resize_e = dir_owned.contains('e');
+                    s.resize_w = dir_owned.contains('w');
+                    s.start_x = e.client_x() as f64;
+                    s.start_y = e.client_y() as f64;
+                    s.start_left = overlay_ref.offset_left() as f64;
+                    s.start_top = overlay_ref.offset_top() as f64;
+                    s.start_w = overlay_ref.offset_width() as f64;
+                    s.start_h = overlay_ref.offset_height() as f64;
+                }
+                let _ = iframe_ref.style().set_property("pointer-events", "none");
+                e.prevent_default();
+            })
+        };
 
         overlay.append_child(&handle)?;
+        handle_listeners.push(listener);
     }
 
     // Document-level mousemove drives both dragging and resizing.
@@ -148,7 +161,7 @@ pub fn make_overlay_interactive(overlay: HtmlElement) -> Result<(), JsValue> {
             None => return,
         };
 
-        // Extract all state in one borrow so we drop it before any DOM calls.
+        // Extract all state in one borrow, then release before any DOM calls.
         let snapshot = {
             let s = state_move.borrow();
             if !s.is_dragging && !s.is_resizing {
@@ -215,9 +228,10 @@ pub fn make_overlay_interactive(overlay: HtmlElement) -> Result<(), JsValue> {
         }
     });
 
-    // Store listeners so they stay alive until cleanup_drag() is called.
     DRAG_CLEANUP.with(|cell| {
         *cell.borrow_mut() = Some(DragCleanup {
+            _dragbar: dragbar_listener,
+            _handles: handle_listeners,
             _mousemove: mousemove,
             _mouseup: mouseup,
         });
@@ -226,7 +240,7 @@ pub fn make_overlay_interactive(overlay: HtmlElement) -> Result<(), JsValue> {
     Ok(())
 }
 
-/// Removes the document-level drag listeners and cancels any pending hint timer.
+/// Removes all drag listeners and cancels any pending hint timer.
 ///
 /// Call this when the overlay is removed from the DOM.
 pub fn cleanup_drag() {
@@ -238,7 +252,6 @@ pub fn cleanup_drag() {
     });
 }
 
-/// Schedules the overlay to receive the `overlay--faded` class after the hint delay.
 fn schedule_hint_fade(overlay: HtmlElement) {
     HINT_TIMER.with(|cell| {
         *cell.borrow_mut() = Some(Timeout::new(HINT_DELAY_MS, move || {
@@ -247,7 +260,6 @@ fn schedule_hint_fade(overlay: HtmlElement) {
     });
 }
 
-/// Cancels any pending fade timer and removes the faded class immediately.
 fn restore_hint(overlay: &HtmlElement) {
     HINT_TIMER.with(|cell| {
         *cell.borrow_mut() = None;

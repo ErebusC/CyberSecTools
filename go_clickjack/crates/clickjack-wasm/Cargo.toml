@@ -51,6 +51,7 @@ features = [
 
 [features]
 default = []
-# Enables the Leptos component re-exports (leptos itself is not a direct dep;
-# callers bring it in and use the functions exposed from this crate).
+# Reserved for future Leptos integration. Callers that depend on this crate
+# in a Leptos app can gate their own component wrappers on this feature.
+# Leptos itself is not a direct dependency of this crate.
 leptos = []

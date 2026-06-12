@@ -51,7 +51,16 @@ async fn index_handler(State(state): State<Arc<AppState>>) -> Response {
         logo_url: &state.logo_url,
     };
     match template.render() {
-        Ok(html) => Html(html).into_response(),
+        Ok(html) => {
+            // Prevent the tool's own UI from being framed by another page,
+            // matching the X-Frame-Options: Deny behaviour of the original Go version.
+            let mut response = Html(html).into_response();
+            response.headers_mut().insert(
+                header::HeaderName::from_static("x-frame-options"),
+                header::HeaderValue::from_static("Deny"),
+            );
+            response
+        }
         Err(err) => {
             tracing::error!("failed to render index template: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
