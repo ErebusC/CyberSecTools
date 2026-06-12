@@ -395,10 +395,15 @@ body {
   border-bottom: 1px solid var(--border);
   pointer-events: all;
   cursor: grab;
+  transition: color 0.6s ease;
 }
 
 .overlay-dragbar:active {
   cursor: grabbing;
+}
+
+.dragbar--faded {
+  color: transparent;
 }
 
 #decoy-content {

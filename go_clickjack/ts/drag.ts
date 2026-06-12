@@ -17,6 +17,7 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
   let startLeft = 0, startTop = 0, startW = 0, startH = 0;
 
   function beginDrag(e: MouseEvent): void {
+    restoreHint();
     isDragging = true;
     startX = e.clientX;
     startY = e.clientY;
@@ -27,6 +28,7 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
   }
 
   function beginResize(dir: string, e: MouseEvent): void {
+    restoreHint();
     isResizing = true;
     resizeDir = dir;
     startX = e.clientX;
@@ -38,6 +40,24 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
     iframe.style.pointerEvents = "none";
     e.preventDefault();
   }
+
+  const HINT_DELAY = 10_000;
+  let hintTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleHintFade(): void {
+    if (hintTimer !== null) clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => {
+      dragbar.classList.add("dragbar--faded");
+      hintTimer = null;
+    }, HINT_DELAY);
+  }
+
+  function restoreHint(): void {
+    if (hintTimer !== null) clearTimeout(hintTimer);
+    dragbar.classList.remove("dragbar--faded");
+  }
+
+  scheduleHintFade();
 
   dragbar.addEventListener("mousedown", beginDrag);
 
@@ -78,6 +98,7 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
   }
 
   function onMouseUp(): void {
+    if (isDragging || isResizing) scheduleHintFade();
     isDragging = false;
     isResizing = false;
     iframe.style.pointerEvents = "";
@@ -87,6 +108,7 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
   document.addEventListener("mouseup", onMouseUp);
 
   dragCleanups.set(overlay, () => {
+    if (hintTimer !== null) clearTimeout(hintTimer);
     dragbar.removeEventListener("mousedown", beginDrag);
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("mouseup", onMouseUp);
