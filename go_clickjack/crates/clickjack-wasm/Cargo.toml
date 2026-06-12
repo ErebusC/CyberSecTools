@@ -1,0 +1,56 @@
+[package]
+name = "clickjack-wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+clickjack-core = { path = "../clickjack-core" }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+gloo-events = "0.2"
+gloo-timers = "0.3"
+
+[dependencies.web-sys]
+version = "0.3"
+features = [
+  "console",
+  "CssStyleDeclaration",
+  "Document",
+  "DomStringMap",
+  "DomTokenList",
+  "Element",
+  "Event",
+  "EventTarget",
+  "FormData",
+  "HtmlBodyElement",
+  "HtmlButtonElement",
+  "HtmlElement",
+  "HtmlFormElement",
+  "HtmlHeadElement",
+  "HtmlIFrameElement",
+  "HtmlInputElement",
+  "HtmlLiElement",
+  "HtmlLinkElement",
+  "HtmlSelectElement",
+  "HtmlSpanElement",
+  "HtmlTextAreaElement",
+  "HtmlUListElement",
+  "KeyboardEvent",
+  "MouseEvent",
+  "Node",
+  "NodeList",
+  "Request",
+  "RequestInit",
+  "Response",
+  "Window",
+]
+
+[features]
+default = []
+# Enables the Leptos component re-exports (leptos itself is not a direct dep;
+# callers bring it in and use the functions exposed from this crate).
+leptos = []

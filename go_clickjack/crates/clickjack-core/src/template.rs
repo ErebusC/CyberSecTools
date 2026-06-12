@@ -12,7 +12,7 @@ pub enum DecoyTemplate {
 
 impl DecoyTemplate {
     /// Returns the HTML string for this template.
-    pub fn html(&self) -> Cow<str> {
+    pub fn html(&self) -> Cow<'_, str> {
         match self {
             DecoyTemplate::FakeButton => Cow::Borrowed(
                 r#"<button style="padding:10px 24px;font-size:1em;background:#4a90e2;color:white;border:none;border-radius:4px;cursor:pointer;">Click to Continue</button>"#,
