@@ -377,6 +377,13 @@ body {
   user-select: none;
   box-sizing: border-box;
   overflow: visible;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: grab;
+}
+
+#decoy-overlay:active {
+  cursor: grabbing;
 }
 
 .overlay-dragbar {
