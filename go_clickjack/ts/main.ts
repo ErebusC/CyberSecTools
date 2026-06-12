@@ -44,8 +44,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const fsBtn = document.getElementById("fullscreen-btn")!;
 
+  function exitFullscreen(): void {
+    document.body.classList.remove("ui-fullscreen");
+    fsBtn.textContent = "Fullscreen";
+  }
+
   fsBtn.addEventListener("click", () => {
-    document.body.classList.toggle("ui-fullscreen");
-    fsBtn.textContent = document.body.classList.contains("ui-fullscreen") ? "Exit" : "Fullscreen";
+    if (document.body.classList.contains("ui-fullscreen")) {
+      exitFullscreen();
+    } else {
+      document.body.classList.add("ui-fullscreen");
+      fsBtn.textContent = "Exit";
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") exitFullscreen();
   });
 });

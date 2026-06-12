@@ -381,6 +381,22 @@ body {
   border: 1px solid var(--border);
   /* clicks pass through the content area to the iframe underneath */
   pointer-events: none;
+  transition: background-color 0.6s ease, border-color 0.6s ease;
+}
+
+#decoy-overlay.overlay--faded {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+#decoy-overlay.overlay--faded .overlay-dragbar {
+  color: transparent;
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+
+#decoy-overlay.overlay--faded .resize-handle {
+  opacity: 0;
 }
 
 .overlay-dragbar {
@@ -400,12 +416,6 @@ body {
 
 .overlay-dragbar:active {
   cursor: grabbing;
-}
-
-.dragbar--faded {
-  color: transparent;
-  background-color: transparent;
-  border-bottom-color: transparent;
 }
 
 #decoy-content {
@@ -428,6 +438,7 @@ body {
   border: 1px solid var(--bg);
   z-index: 20;
   pointer-events: all;
+  transition: opacity 0.6s ease;
 }
 
 .resize-nw { top: -4px;              left: -4px;              cursor: nw-resize; }

@@ -47,7 +47,7 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
   function scheduleHintFade(): void {
     if (hintTimer !== null) clearTimeout(hintTimer);
     hintTimer = setTimeout(() => {
-      dragbar.classList.add("dragbar--faded");
+        overlay.classList.add("overlay--faded");
       document.getElementById("controls")?.classList.add("controls--faded");
       hintTimer = null;
     }, HINT_DELAY);
@@ -55,7 +55,7 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
 
   function restoreHint(): void {
     if (hintTimer !== null) clearTimeout(hintTimer);
-    dragbar.classList.remove("dragbar--faded");
+    overlay.classList.remove("overlay--faded");
     document.getElementById("controls")?.classList.remove("controls--faded");
   }
 
@@ -111,7 +111,7 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
 
   dragCleanups.set(overlay, () => {
     if (hintTimer !== null) clearTimeout(hintTimer);
-    dragbar.classList.remove("dragbar--faded");
+    overlay.classList.remove("overlay--faded");
     document.getElementById("controls")?.classList.remove("controls--faded");
     dragbar.removeEventListener("mousedown", beginDrag);
     document.removeEventListener("mousemove", onMouseMove);
