@@ -1,6 +1,6 @@
 /* ============================================================
    CLICKJACKER — all tool-specific styles
-   Requires index.css (Erebus design system) to be loaded first
+   Requires erebus.css (Erebus design system) to be loaded first
    ============================================================ */
 
 /* ------------------------------------------------------------
@@ -84,7 +84,7 @@ body {
   text-transform: lowercase;
 }
 
-#controls input:not([type="submit"]) {
+#controls input:not([type="submit"]):not([type="range"]) {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
@@ -97,7 +97,24 @@ body {
   outline: none;
 }
 
-#controls input:not([type="submit"]):focus {
+#controls input:not([type="submit"]):not([type="range"]):focus {
+  border-color: var(--accent);
+}
+
+#controls select {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+  cursor: pointer;
+}
+
+#controls select:focus {
   border-color: var(--accent);
 }
 
@@ -119,14 +136,62 @@ body {
   color: var(--text);
 }
 
-#overlay-reset {
+#overlay-reset,
+#decoy-reset {
   border-color: #F87171;
   color: #F87171;
 }
 
-#overlay-reset:hover {
+#overlay-reset:hover,
+#decoy-reset:hover {
   background: rgba(248, 113, 113, 0.1);
   color: #FCA5A5;
+}
+
+/* ------------------------------------------------------------
+   OPACITY CONTROLS  (shown inline in decoy row when active)
+   ------------------------------------------------------------ */
+
+#opacity-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#opacity-slider {
+  width: 80px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+#opacity-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 2.8em;
+}
+
+/* ------------------------------------------------------------
+   CUSTOM HTML INPUT  (shown when custom template is selected)
+   ------------------------------------------------------------ */
+
+#custom-html-input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  resize: vertical;
+  min-height: 2.5em;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+}
+
+#custom-html-input:focus {
+  border-color: var(--accent);
 }
 
 /* ------------------------------------------------------------
@@ -135,10 +200,10 @@ body {
 
 #wrapper iframe {
   position: absolute;
-  top: 13%;
+  top: 20%;
   left: 1%;
   width: 73%;
-  height: 87%;
+  height: 80%;
   border: 1px solid var(--border);
   box-sizing: border-box;
 }
@@ -220,15 +285,15 @@ body {
 }
 
 /* ------------------------------------------------------------
-   OVERLAY  (injected clickjacking credential form)
+   OVERLAY  (injected phishing credential form)
    ------------------------------------------------------------ */
 
 #overlay {
   position: absolute;
-  top: 13%;
+  top: 20%;
   left: 1%;
   width: 73%;
-  height: 87%;
+  height: 80%;
   z-index: 10;
   display: flex;
   align-items: center;
@@ -298,13 +363,72 @@ body {
   opacity: 0.85;
 }
 
+/* ------------------------------------------------------------
+   DECOY OVERLAY  (interactive clickjacking PoC element)
+   ------------------------------------------------------------ */
+
+#decoy-overlay {
+  position: absolute;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  min-width: 80px;
+  min-height: 40px;
+  user-select: none;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.overlay-dragbar {
+  background: rgba(20, 24, 32, 0.82);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  text-align: center;
+  flex-shrink: 0;
+  cursor: grab;
+  border-bottom: 1px solid var(--border);
+}
+
+.overlay-dragbar:active {
+  cursor: grabbing;
+}
+
+#decoy-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+/* Resize handles */
+
+.resize-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border: 1px solid var(--bg);
+  z-index: 20;
+}
+
+.resize-nw { top: -4px;              left: -4px;              cursor: nw-resize; }
+.resize-n  { top: -4px;              left: calc(50% - 4px);   cursor: n-resize;  }
+.resize-ne { top: -4px;              right: -4px;             cursor: ne-resize; }
+.resize-e  { top: calc(50% - 4px);  right: -4px;             cursor: e-resize;  }
+.resize-se { bottom: -4px;          right: -4px;             cursor: se-resize; }
+.resize-s  { bottom: -4px;          left: calc(50% - 4px);   cursor: s-resize;  }
+.resize-sw { bottom: -4px;          left: -4px;              cursor: sw-resize; }
+.resize-w  { top: calc(50% - 4px);  left: -4px;              cursor: w-resize;  }
+
 /* ============================================================
    LARGE SCREEN BREAKPOINTS
    ============================================================ */
-
-/* ------------------------------------------------------------
-   LARGE DESKTOP  (min-width: 1280px)
-   ------------------------------------------------------------ */
 
 @media (min-width: 1280px) {
   #history-panel {
@@ -316,10 +440,6 @@ body {
     gap: 8px;
   }
 }
-
-/* ------------------------------------------------------------
-   WIDE DESKTOP  (min-width: 1600px)
-   ------------------------------------------------------------ */
 
 @media (min-width: 1600px) {
   .nav {
@@ -343,7 +463,7 @@ body {
     font-size: 12px;
   }
 
-  #controls input:not([type="submit"]) {
+  #controls input:not([type="submit"]):not([type="range"]) {
     font-size: 13px;
     padding: 8px 12px;
   }
@@ -397,10 +517,6 @@ body {
   }
 }
 
-/* ------------------------------------------------------------
-   4K / ULTRA-WIDE  (min-width: 2560px)
-   ------------------------------------------------------------ */
-
 @media (min-width: 2560px) {
   .nav {
     padding: 16px 0;
@@ -428,7 +544,7 @@ body {
     font-size: 14px;
   }
 
-  #controls input:not([type="submit"]) {
+  #controls input:not([type="submit"]):not([type="range"]) {
     font-size: 15px;
     padding: 10px 14px;
   }

