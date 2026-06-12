@@ -1,0 +1,3 @@
+/target/
+/go_clickjack
+crates/clickjack-cli/wasm-pkg/

@@ -1,0 +1,48 @@
+# Clickjacker build targets.
+#
+# Requires: just, wasm-pack, cargo, rust with wasm32-unknown-unknown target.
+# Install the WASM target: rustup target add wasm32-unknown-unknown
+# Install wasm-pack:        cargo install wasm-pack
+
+# Output directory for compiled WASM artifacts (relative to workspace root).
+wasm_out := "crates/clickjack-cli/wasm-pkg"
+
+# Build the WASM frontend and then the CLI binary.
+build: build-wasm build-cli
+
+# Compile the WASM crate with wasm-pack for a release build.
+build-wasm:
+    wasm-pack build crates/clickjack-wasm \
+        --target web \
+        --out-dir ../../{{wasm_out}} \
+        --release
+
+# Build the CLI binary (run build-wasm first to populate the wasm-pkg directory).
+build-cli:
+    cargo build --package clickjack-cli --release
+
+# Compile a development WASM build (unoptimised, includes debug info).
+dev-wasm:
+    wasm-pack build crates/clickjack-wasm \
+        --target web \
+        --out-dir ../../{{wasm_out}} \
+        --dev
+
+# Build and run the CLI in development mode.
+dev: dev-wasm
+    cargo run --package clickjack-cli
+
+# Type-check all crates. The WASM crate must be checked separately with its target.
+check:
+    cargo check --workspace --exclude clickjack-wasm
+    cargo check --package clickjack-wasm --target wasm32-unknown-unknown
+
+# Run clippy on all crates.
+lint:
+    cargo clippy --workspace --exclude clickjack-wasm -- -D warnings
+    cargo clippy --package clickjack-wasm --target wasm32-unknown-unknown -- -D warnings
+
+# Remove build artefacts.
+clean:
+    cargo clean
+    rm -rf {{wasm_out}}
