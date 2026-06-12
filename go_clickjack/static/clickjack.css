@@ -379,11 +379,8 @@ body {
   overflow: visible;
   background: var(--surface);
   border: 1px solid var(--border);
-  cursor: grab;
-}
-
-#decoy-overlay:active {
-  cursor: grabbing;
+  /* clicks pass through the content area to the iframe underneath */
+  pointer-events: none;
 }
 
 .overlay-dragbar {
@@ -395,8 +392,9 @@ body {
   padding: 4px 8px;
   text-align: center;
   flex-shrink: 0;
-  cursor: grab;
   border-bottom: 1px solid var(--border);
+  pointer-events: all;
+  cursor: grab;
 }
 
 .overlay-dragbar:active {
@@ -422,6 +420,7 @@ body {
   background: var(--accent);
   border: 1px solid var(--bg);
   z-index: 20;
+  pointer-events: all;
 }
 
 .resize-nw { top: -4px;              left: -4px;              cursor: nw-resize; }

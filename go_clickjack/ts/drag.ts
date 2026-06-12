@@ -8,6 +8,7 @@ const MIN_H = 40;
 
 export function makeOverlayInteractive(overlay: HTMLElement): void {
   const iframe = document.querySelector<HTMLIFrameElement>('iframe[name="website"]')!;
+  const dragbar = overlay.querySelector<HTMLElement>(".overlay-dragbar")!;
 
   let isDragging = false;
   let isResizing = false;
@@ -15,34 +16,36 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
   let startX = 0, startY = 0;
   let startLeft = 0, startTop = 0, startW = 0, startH = 0;
 
-  for (const dir of DIRECTIONS) {
-    const handle = document.createElement("div");
-    handle.className = `resize-handle resize-${dir}`;
-    handle.dataset.dir = dir;
-    overlay.appendChild(handle);
+  function beginDrag(e: MouseEvent): void {
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = overlay.offsetLeft;
+    startTop = overlay.offsetTop;
+    iframe.style.pointerEvents = "none";
+    e.preventDefault();
   }
 
-  function onMouseDown(e: MouseEvent): void {
-    const target = e.target as HTMLElement;
-    const tag = target.tagName.toLowerCase();
-    if (["input", "button", "label", "select", "textarea"].includes(tag)) return;
-
+  function beginResize(dir: string, e: MouseEvent): void {
+    isResizing = true;
+    resizeDir = dir;
     startX = e.clientX;
     startY = e.clientY;
     startLeft = overlay.offsetLeft;
     startTop = overlay.offsetTop;
     startW = overlay.offsetWidth;
     startH = overlay.offsetHeight;
-
-    if (target.classList.contains("resize-handle") && target.dataset.dir) {
-      isResizing = true;
-      resizeDir = target.dataset.dir;
-    } else {
-      isDragging = true;
-    }
-
     iframe.style.pointerEvents = "none";
     e.preventDefault();
+  }
+
+  dragbar.addEventListener("mousedown", beginDrag);
+
+  for (const dir of DIRECTIONS) {
+    const handle = document.createElement("div");
+    handle.className = `resize-handle resize-${dir}`;
+    handle.addEventListener("mousedown", (e) => beginResize(dir, e));
+    overlay.appendChild(handle);
   }
 
   function onMouseMove(e: MouseEvent): void {
@@ -80,12 +83,11 @@ export function makeOverlayInteractive(overlay: HTMLElement): void {
     iframe.style.pointerEvents = "";
   }
 
-  overlay.addEventListener("mousedown", onMouseDown);
   document.addEventListener("mousemove", onMouseMove);
   document.addEventListener("mouseup", onMouseUp);
 
   dragCleanups.set(overlay, () => {
-    overlay.removeEventListener("mousedown", onMouseDown);
+    dragbar.removeEventListener("mousedown", beginDrag);
     document.removeEventListener("mousemove", onMouseMove);
     document.removeEventListener("mouseup", onMouseUp);
     iframe.style.pointerEvents = "";
