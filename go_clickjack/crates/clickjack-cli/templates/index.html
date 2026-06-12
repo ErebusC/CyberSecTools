@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="stylesheet" type="text/css" href="/static/erebus.css">
+	<link rel="stylesheet" type="text/css" href="/static/clickjack.css">
+	<title>ClickJacker</title>
+	<script type="module">
+		import init from '/wasm/clickjack_wasm.js';
+		await init();
+	</script>
+</head>
+<body>
+	<nav class="nav">
+		<div class="nav__inner">
+			{% if !logo_url.is_empty() %}
+			<div class="nav__logo">
+				<img class="nav__logo-mark" src="{{ logo_url }}" alt="Logo">
+			</div>
+			{% endif %}
+			<div class="nav__tool-name">Click<span>Jacker</span></div>
+			<button id="fullscreen-btn">Fullscreen</button>
+		</div>
+	</nav>
+
+	<div id="wrapper">
+		<div id="controls">
+			<div class="control-row">
+				<span class="control-label">Web page to clickjack:</span>
+				<input name="webInput" value="{{ target_url }}">
+				<button id="submit-btn">Submit</button>
+			</div>
+			<div class="control-row">
+				<span class="control-label">Collaborator address:</span>
+				<input name="collabInput" value="{{ collab_url }}">
+				<button id="phish-btn">Phish</button>
+				<button id="overlay-reset" style="display:none;">Remove Overlay</button>
+			</div>
+			<div class="control-row">
+				<span class="control-label">Decoy overlay:</span>
+				<select id="decoy-template">
+					<option value="fake-button">Fake button</option>
+					<option value="survey">Survey prompt</option>
+					<option value="security">Security check</option>
+					<option value="reward">Flash reward</option>
+					<option value="custom">Custom</option>
+				</select>
+				<button id="decoy-btn">Clickjack</button>
+				<button id="decoy-reset" style="display:none;">Remove Decoy</button>
+				<span id="opacity-controls" style="display:none;">
+					<span class="control-label">Opacity:</span>
+					<input type="range" id="opacity-slider" min="0" max="100" value="100">
+					<span id="opacity-value">100%</span>
+				</span>
+			</div>
+			<div class="control-row" id="custom-html-row" style="display:none;">
+				<span class="control-label">Custom HTML:</span>
+				<textarea id="custom-html-input" rows="2"></textarea>
+			</div>
+		</div>
+
+		<div id="history-panel">
+			<div id="history-title">Session History</div>
+			<ul id="url-history"></ul>
+		</div>
+
+		<iframe name="website" src="{{ target_url }}"></iframe>
+	</div>
+</body>
+</html>

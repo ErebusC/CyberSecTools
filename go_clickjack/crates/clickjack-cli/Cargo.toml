@@ -1,0 +1,21 @@
+[package]
+name = "clickjack-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "clickjack"
+path = "src/main.rs"
+
+[dependencies]
+clickjack-core = { path = "../clickjack-core" }
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+rust-embed = "8"
+clap = { version = "4", features = ["derive"] }
+open = "5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+mime_guess = "2"
+askama = "0.12"
+anyhow = "1"
