@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "build": "esbuild ts/main.ts --bundle --format=iife --outfile=static/app.js --target=es2020 --minify",
+    "dev":   "esbuild ts/main.ts --bundle --format=iife --outfile=static/app.js --target=es2020 --sourcemap",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

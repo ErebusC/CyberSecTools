@@ -4,6 +4,9 @@
 # Compiled binaries (match any file without extension in project dirs)
 engage_jr/engage_jr
 go_clickjack/clickjack
+# go_clickjack JS build output and dependencies
+go_clickjack/static/app.js
+go_clickjack/node_modules/
 # Go workspace / vendor
 vendor/
 go.work.sum
