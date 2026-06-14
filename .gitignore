@@ -3,12 +3,16 @@
 # ====================
 # Compiled binaries (match any file without extension in project dirs)
 engage_jr/engage_jr
-go_clickjack/clickjack
-# go_clickjack JS dependencies
-go_clickjack/node_modules/
+clickjack/clickjack
 # Go workspace / vendor
 vendor/
 go.work.sum
+
+# ====================
+# TypeScript / Node
+# ====================
+**/node_modules/
+*.tsbuildinfo
 
 # ====================
 # Rust
