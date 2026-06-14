@@ -104,3 +104,4 @@ Session.vim
 *.bak
 *.orig
 core
+*.map
