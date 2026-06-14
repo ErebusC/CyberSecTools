@@ -1,18 +1,22 @@
 # ClickJacker
 
-A clickjacking proof-of-concept tool written in Go. Loads a target website inside an iframe and overlays a fake login form to demonstrate that the target is vulnerable to clickjacking attacks. Supports an optional collaborator address to capture submitted credentials.
+A clickjacking proof-of-concept tool written in Go. Loads a target site in an iframe with a fake login form overlay and optional collaborator exfiltration.
 
-Built by Daniel Roberts. Enhanced with AI assistance to improve functionality.
+Built by Daniel Roberts.
 
 ## Features
 
 - Loads any target URL in an iframe
-- Frame status indicator showing whether the target was successfully framed or blocked
-- Overlay a fake credential capture form over the framed site
-- Forwards captured credentials to a collaborator server (e.g. Burp Collaborator)
-- Optional logo display in the nav bar via `--logo`
-- Session history panel tracking URLs loaded during the session
-- Auto-detects a logo file alongside the binary if one is present
+- Frame status indicator (framed or blocked)
+- Fake credential form overlaid on the framed site
+- Captured credentials POSTed to a collaborator address (e.g. Burp Collaborator)
+- Draggable, resizable decoy overlay for UI redressing tests
+- Decoy templates: fake button, fake dialog, cookie banner, custom HTML
+- Adjustable decoy opacity
+- Decoy chrome fades after 10 seconds of inactivity, restores on interaction
+- Fullscreen mode hides controls (Escape or button to exit)
+- Session URL history panel
+- Optional nav logo via `--logo` or auto-detected from a file alongside the binary
 
 ## Usage
 
@@ -20,28 +24,26 @@ Built by Daniel Roberts. Enhanced with AI assistance to improve functionality.
 clickjack [--logo <url|path>] [target_url] [collaborator_url]
 ```
 
-**Arguments:**
-
 | Argument | Description |
 |---|---|
-| `target_url` | The URL to load in the iframe. Defaults to `https://economist.com` |
+| `target_url` | URL to load in the iframe. Defaults to `https://economist.com` |
 | `collaborator_url` | Address to POST captured credentials to |
-| `--logo` | URL or local file path to display as a logo in the nav bar |
+| `--logo` | URL or local file path to display in the nav bar |
 
 Once running, open `http://localhost:9999` in your browser.
 
-1. Enter the target URL and click Submit to load it in the iframe
-2. If the site can be framed, the status badge will show Framed
-3. Enter your collaborator address and click Clickjack to overlay the credential form
+1. Enter the target URL and click Submit
+2. If the site can be framed, the status badge shows Framed
+3. Enter a collaborator address and click Clickjack to overlay the credential form
 4. Submitted credentials are POSTed to the collaborator address
 
-## Running with Docker
+## Docker
 
 ```
 docker run -p 9999:9999 clickjacker [target_url] [collaborator_url]
 ```
 
-The `CONTAINER=TRUE` environment variable disables the automatic browser open behaviour.
+Set `CONTAINER=TRUE` to disable the automatic browser open on startup.
 
 ## Building
 
@@ -51,5 +53,5 @@ go build -o clickjack .
 
 ## Notes
 
-- The tool sets `X-Frame-Options: Deny` on its own responses so the tool cannot be framed by another page
-- The frame status indicator uses a cross-origin heuristic; a SecurityError on iframe access means the page loaded successfully, which is reported as Framed
+- The tool sets `X-Frame-Options: Deny` on its own responses so it cannot itself be framed
+- The frame status indicator uses a cross-origin heuristic: a `SecurityError` on iframe access indicates the page loaded, which is reported as Framed
