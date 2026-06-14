@@ -1,0 +1,681 @@
+/* ============================================================
+   CLICKJACKER — all tool-specific styles
+   Requires erebus.css (Erebus design system) to be loaded first
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   BODY OVERRIDE
+   ------------------------------------------------------------ */
+
+body {
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------
+   NAV OVERRIDE  (centred tool name, no branding for this tool)
+   ------------------------------------------------------------ */
+
+.nav {
+  padding: 10px 0;
+}
+
+.nav__inner {
+  justify-content: center;
+  position: relative;
+}
+
+.nav__logo {
+  display: none;
+}
+
+.nav__tool-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: var(--text);
+  text-transform: uppercase;
+}
+
+.nav__tool-name span {
+  color: var(--accent);
+}
+
+/* ------------------------------------------------------------
+   WRAPPER
+   ------------------------------------------------------------ */
+
+#wrapper {
+  width: 100vw;
+  height: calc(100vh - 52px);
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------
+   CONTROLS
+   ------------------------------------------------------------ */
+
+#controls {
+  position: absolute;
+  left: 1%;
+  top: 0;
+  width: 73%;
+  box-sizing: border-box;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+#controls input:not([type="submit"]):not([type="range"]) {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+}
+
+#controls input:not([type="submit"]):not([type="range"]):focus {
+  border-color: var(--accent);
+}
+
+#controls select {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+  cursor: pointer;
+}
+
+#controls select:focus {
+  border-color: var(--accent);
+}
+
+#controls button {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 6px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid var(--border-mid);
+  background: transparent;
+  color: var(--accent-dim);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+#controls button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+#overlay-reset,
+#decoy-reset {
+  border-color: #F87171;
+  color: #F87171;
+}
+
+#overlay-reset:hover,
+#decoy-reset:hover {
+  background: rgba(248, 113, 113, 0.1);
+  color: #FCA5A5;
+}
+
+/* ------------------------------------------------------------
+   OPACITY CONTROLS  (shown inline in decoy row when active)
+   ------------------------------------------------------------ */
+
+#opacity-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+#opacity-slider {
+  width: 80px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+#opacity-value {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 2.8em;
+}
+
+/* ------------------------------------------------------------
+   CUSTOM HTML INPUT  (shown when custom template is selected)
+   ------------------------------------------------------------ */
+
+#custom-html-input {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  resize: vertical;
+  min-height: 2.5em;
+  padding: 6px 10px;
+  box-sizing: border-box;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+}
+
+#custom-html-input:focus {
+  border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------
+   IFRAME
+   ------------------------------------------------------------ */
+
+#wrapper iframe {
+  position: absolute;
+  top: 20%;
+  left: 1%;
+  width: 73%;
+  height: 80%;
+  border: 1px solid var(--border);
+  box-sizing: border-box;
+}
+
+/* ------------------------------------------------------------
+   HISTORY PANEL
+   ------------------------------------------------------------ */
+
+#history-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24%;
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  box-sizing: border-box;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+#history-title {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  text-transform: lowercase;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+#url-history {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#url-history li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+#url-history li:last-child {
+  border-bottom: none;
+}
+
+#url-history .url-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+#url-history .url-load {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--accent-dim);
+  border: 1px solid var(--border-mid);
+  transition: border-color 0.15s ease;
+}
+
+#url-history .url-load:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------
+   OVERLAY  (injected phishing credential form)
+   ------------------------------------------------------------ */
+
+#overlay {
+  position: absolute;
+  top: 20%;
+  left: 1%;
+  width: 73%;
+  height: 80%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 11, 17, 0.85);
+  box-sizing: border-box;
+}
+
+#overlay form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-top: 2px solid var(--accent);
+  padding: 28px 32px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+#overlay form label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--accent-dim);
+  margin-top: 14px;
+  margin-bottom: 6px;
+  text-transform: lowercase;
+}
+
+#overlay form label:first-of-type {
+  margin-top: 0;
+}
+
+#overlay form input[type="text"],
+#overlay form input[type="password"] {
+  width: 100%;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  box-sizing: border-box;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  outline: none;
+}
+
+#overlay form input[type="text"]:focus,
+#overlay form input[type="password"]:focus {
+  border-color: var(--accent);
+}
+
+#overlay form input[type="submit"] {
+  margin-top: 20px;
+  width: 100%;
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--bg);
+  border: 1px solid var(--accent);
+  transition: opacity 0.15s ease;
+}
+
+#overlay form input[type="submit"]:hover {
+  opacity: 0.85;
+}
+
+/* ------------------------------------------------------------
+   DECOY OVERLAY  (interactive clickjacking PoC element)
+   ------------------------------------------------------------ */
+
+#decoy-overlay {
+  position: absolute;
+  z-index: 11;
+  display: flex;
+  flex-direction: column;
+  min-width: 80px;
+  min-height: 40px;
+  user-select: none;
+  box-sizing: border-box;
+  overflow: visible;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* clicks pass through the content area to the iframe underneath */
+  pointer-events: none;
+  transition: background-color 0.6s ease, border-color 0.6s ease;
+}
+
+#decoy-overlay.overlay--faded {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+#decoy-overlay.overlay--faded .overlay-dragbar {
+  color: transparent;
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+
+#decoy-overlay.overlay--faded .resize-handle {
+  opacity: 0;
+}
+
+.overlay-dragbar {
+  background: rgba(20, 24, 32, 0.82);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  padding: 4px 8px;
+  text-align: center;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  pointer-events: all;
+  cursor: grab;
+  transition: color 0.6s ease, background-color 0.6s ease, border-bottom-color 0.6s ease;
+}
+
+.overlay-dragbar:active {
+  cursor: grabbing;
+}
+
+#decoy-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow: auto;
+}
+
+/* Resize handles */
+
+.resize-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border: 1px solid var(--bg);
+  z-index: 20;
+  pointer-events: all;
+  transition: opacity 0.6s ease;
+}
+
+.resize-nw { top: -4px;              left: -4px;              cursor: nw-resize; }
+.resize-n  { top: -4px;              left: calc(50% - 4px);   cursor: n-resize;  }
+.resize-ne { top: -4px;              right: -4px;             cursor: ne-resize; }
+.resize-e  { top: calc(50% - 4px);  right: -4px;             cursor: e-resize;  }
+.resize-se { bottom: -4px;          right: -4px;             cursor: se-resize; }
+.resize-s  { bottom: -4px;          left: calc(50% - 4px);   cursor: s-resize;  }
+.resize-sw { bottom: -4px;          left: -4px;              cursor: sw-resize; }
+.resize-w  { top: calc(50% - 4px);  left: -4px;              cursor: w-resize;  }
+
+/* ------------------------------------------------------------
+   FULLSCREEN BUTTON  (fixed top-right, visible in all states)
+   ------------------------------------------------------------ */
+
+#fullscreen-btn {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 200;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border-mid);
+  color: var(--text-muted);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+#fullscreen-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------
+   UI FULLSCREEN MODE  (CSS-only, no browser fullscreen API)
+   ------------------------------------------------------------ */
+
+body.ui-fullscreen .nav,
+body.ui-fullscreen #controls,
+body.ui-fullscreen #history-panel {
+  display: none;
+}
+
+body.ui-fullscreen #wrapper {
+  height: 100vh;
+}
+
+body.ui-fullscreen #wrapper iframe {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body.ui-fullscreen #overlay {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+
+/* ============================================================
+   LARGE SCREEN BREAKPOINTS
+   ============================================================ */
+
+@media (min-width: 1280px) {
+  #history-panel {
+    padding: 16px;
+  }
+
+  #controls {
+    padding: 10px 0;
+    gap: 8px;
+  }
+}
+
+@media (min-width: 1600px) {
+  .nav {
+    padding: 12px 0;
+  }
+
+  #wrapper {
+    height: calc(100vh - 58px);
+  }
+
+  .nav__tool-name {
+    font-size: 15px;
+  }
+
+  #controls {
+    padding: 12px 0;
+    gap: 10px;
+  }
+
+  .control-label {
+    font-size: 12px;
+  }
+
+  #controls input:not([type="submit"]):not([type="range"]) {
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  #controls button {
+    font-size: 12px;
+    padding: 8px 16px;
+  }
+
+  #history-panel {
+    padding: 18px;
+  }
+
+  #history-title {
+    font-size: 12px;
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+
+  #url-history li {
+    padding: 10px 0;
+  }
+
+  #url-history .url-label {
+    font-size: 12px;
+  }
+
+  #url-history .url-load {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  #overlay form {
+    min-width: 340px;
+    padding: 32px 40px;
+  }
+
+  #overlay form label {
+    font-size: 12px;
+  }
+
+  #overlay form input[type="text"],
+  #overlay form input[type="password"] {
+    font-size: 13px;
+    padding: 10px 12px;
+  }
+
+  #overlay form input[type="submit"] {
+    font-size: 13px;
+    padding: 12px;
+  }
+}
+
+@media (min-width: 2560px) {
+  .nav {
+    padding: 16px 0;
+  }
+
+  #wrapper {
+    height: calc(100vh - 72px);
+  }
+
+  .nav__tool-name {
+    font-size: 18px;
+    letter-spacing: 0.18em;
+  }
+
+  #controls {
+    padding: 16px 0;
+    gap: 12px;
+  }
+
+  .control-row {
+    gap: 12px;
+  }
+
+  .control-label {
+    font-size: 14px;
+  }
+
+  #controls input:not([type="submit"]):not([type="range"]) {
+    font-size: 15px;
+    padding: 10px 14px;
+  }
+
+  #controls button {
+    font-size: 13px;
+    padding: 10px 20px;
+  }
+
+  #history-panel {
+    padding: 24px;
+  }
+
+  #history-title {
+    font-size: 13px;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+  }
+
+  #url-history li {
+    padding: 12px 0;
+    gap: 12px;
+  }
+
+  #url-history .url-label {
+    font-size: 13px;
+  }
+
+  #url-history .url-load {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  #overlay form {
+    min-width: 420px;
+    padding: 40px 48px;
+  }
+
+  #overlay form label {
+    font-size: 13px;
+    margin-top: 18px;
+    margin-bottom: 8px;
+  }
+
+  #overlay form input[type="text"],
+  #overlay form input[type="password"] {
+    font-size: 15px;
+    padding: 12px 14px;
+  }
+
+  #overlay form input[type="submit"] {
+    font-size: 14px;
+    padding: 14px;
+    margin-top: 24px;
+  }
+}
