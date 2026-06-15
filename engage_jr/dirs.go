@@ -87,11 +87,7 @@ func buildDir(cfg *Config, mode engagementMode, name string) (string, error) {
 	}
 
 	if mode == ModeWork {
-		// Create the notes directory with an Obsidian vault skeleton so the vault
-		// is valid from the first open. The vault is named after the engagement
-		// (not a generic "notes") so the obsidian://open?vault= URI is unambiguous
-		// across multiple engagements.
-		obsidianDir := filepath.Join(base, "notes", name, ".obsidian")
+		obsidianDir := filepath.Join(base, "notes", ".obsidian")
 		if err := os.MkdirAll(obsidianDir, 0755); err != nil {
 			logWarn("could not create notes vault skeleton: %v", err)
 		}
