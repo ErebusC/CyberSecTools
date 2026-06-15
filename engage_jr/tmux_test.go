@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,8 +80,12 @@ func TestBuildTmuxEnvWorkMode(t *testing.T) {
 	if find("ENGAGE_DIR") != dir {
 		t.Errorf("ENGAGE_DIR = %q", find("ENGAGE_DIR"))
 	}
-	if find("ENGAGE_NOTES_DIR") != filepath.Join(dir, "notes", "acmecorp_1") {
-		t.Errorf("ENGAGE_NOTES_DIR = %q, want <engDir>/notes/acmecorp_1", find("ENGAGE_NOTES_DIR"))
+	if find("ENGAGE_NOTES_DIR") != filepath.Join(dir, "notes") {
+		t.Errorf("ENGAGE_NOTES_DIR = %q, want <engDir>/notes", find("ENGAGE_NOTES_DIR"))
+	}
+	wantObsidianURL := "obsidian://open?path=" + url.QueryEscape(filepath.Join(dir, "notes", "general_notes.md"))
+	if find("ENGAGE_OBSIDIAN_URL") != wantObsidianURL {
+		t.Errorf("ENGAGE_OBSIDIAN_URL = %q, want %q", find("ENGAGE_OBSIDIAN_URL"), wantObsidianURL)
 	}
 	if find("TARGET_1") != "10.10.10.1" {
 		t.Errorf("TARGET_1 = %q", find("TARGET_1"))

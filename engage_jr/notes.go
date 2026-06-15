@@ -47,17 +47,17 @@ var redLessonsTemplate = "---\ntags:\n  - work\n  - \"{{year}}\"\n---\n\n" +
 
 // provisionEngagementNotes writes the notes vault skeleton for a work engagement:
 //
-//   - <engDir>/notes/<name>/general_notes.md   — substituted
-//   - <engDir>/notes/<name>/red_lessons.md      — substituted
-//   - <engDir>/notes/<name>/_templates/general_notes_template.md  — raw
-//   - <engDir>/notes/<name>/_templates/red_lessons_template.md    — raw
+//   - <engDir>/notes/general_notes.md   — substituted
+//   - <engDir>/notes/red_lessons.md      — substituted
+//   - <engDir>/notes/_templates/general_notes_template.md  — raw
+//   - <engDir>/notes/_templates/red_lessons_template.md    — raw
 //
 // Existing files are never overwritten so repeated calls are idempotent.
 func provisionEngagementNotes(engDir, name string) error {
 	now := time.Now()
 	date := now.Format("02-01-2006")
 	year := now.Format("2006")
-	notesDir := filepath.Join(engDir, "notes", name)
+	notesDir := filepath.Join(engDir, "notes")
 	templatesDir := filepath.Join(notesDir, "_templates")
 
 	if err := os.MkdirAll(templatesDir, 0755); err != nil {
@@ -118,7 +118,7 @@ func writeNoteIfNotExists(path, content string) error {
 //
 // Returns the destination path on success (empty string if skipped).
 func promoteRedLessons(engDir, name string, reader *bufio.Reader) (string, error) {
-	srcPath := filepath.Join(engDir, "notes", name, "red_lessons.md")
+	srcPath := filepath.Join(engDir, "notes", "red_lessons.md")
 	data, err := os.ReadFile(srcPath)
 	if err != nil {
 		if os.IsNotExist(err) {

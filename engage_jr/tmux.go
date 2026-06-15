@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,9 +23,10 @@ func intPtr(n int) *int { return &n }
 //     the URI to the live process.
 // xdg-open is intentionally avoided: it can only dispatch to an already-running
 // instance and will silently do nothing when Obsidian is not open.
-// The vault name equals the engagement name (basename of ENGAGE_NOTES_DIR),
-// ensuring each engagement's vault has a unique, unambiguous name.
-const notesCommand = `VAULT_NAME=$(basename "$ENGAGE_NOTES_DIR"); nohup "$ENGAGE_OBSIDIAN_BIN" "obsidian://open?vault=$VAULT_NAME" >/dev/null 2>&1 & cd "$ENGAGE_NOTES_DIR" 2>/dev/null`
+// ENGAGE_OBSIDIAN_URL is set per-engagement via buildTmuxEnv. For work vaults,
+// it uses obsidian://open?path= (absolute path) so Obsidian opens the correct
+// vault even when many prior engagements' notes/ folders are still registered.
+const notesCommand = `nohup "$ENGAGE_OBSIDIAN_BIN" "$ENGAGE_OBSIDIAN_URL" >/dev/null 2>&1 & cd "$ENGAGE_NOTES_DIR" 2>/dev/null`
 
 // defaultTmuxLayouts defines the built-in per-mode tmux window/pane layouts.
 // Users can override any mode's layout via "tmux_layouts" in config.json.
@@ -192,12 +194,23 @@ func buildTmuxEnv(cfg *Config, mode engagementMode, name, engDir, sshHost string
 	set("ENGAGE_BURP_DIR", filepath.Join(engDir, "burp"))
 
 	// Notes directory: isolated engagement vault for work, synced vault for others.
-	// Work vaults live at <engDir>/notes/<name>/ so the vault name (its basename)
-	// equals the engagement name — unique across all engagements.
+	// Work vaults live directly at <engDir>/notes/.
 	if mode == ModeWork {
-		set("ENGAGE_NOTES_DIR", filepath.Join(engDir, "notes", name))
+		set("ENGAGE_NOTES_DIR", filepath.Join(engDir, "notes"))
 	} else {
 		set("ENGAGE_NOTES_DIR", expandHome(cfg.ObsidianSyncedVault))
+	}
+
+	// Obsidian URL to open the correct vault. Work vaults use path-based opening
+	// so Obsidian finds the right vault even when multiple engagements have their
+	// notes/ folders registered (they all share the basename "notes").
+	// Non-work vaults use vault-name opening since the synced vault has a unique name.
+	if mode == ModeWork {
+		notesFile := filepath.Join(engDir, "notes", "general_notes.md")
+		set("ENGAGE_OBSIDIAN_URL", "obsidian://open?path="+url.QueryEscape(notesFile))
+	} else {
+		syncedVault := expandHome(cfg.ObsidianSyncedVault)
+		set("ENGAGE_OBSIDIAN_URL", "obsidian://open?vault="+url.QueryEscape(filepath.Base(syncedVault)))
 	}
 
 	set("ENGAGE_OBSIDIAN_BIN", cfg.ObsidianBin)
@@ -424,7 +437,7 @@ func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) 
 
 		// Ensure the notes directory and Obsidian vault skeleton exist for work.
 		if mode == ModeWork {
-			notesDir := filepath.Join(engDir, "notes", name, ".obsidian")
+			notesDir := filepath.Join(engDir, "notes", ".obsidian")
 			if err := os.MkdirAll(notesDir, 0755); err != nil {
 				logWarn("could not create notes vault: %v", err)
 			}
@@ -448,8 +461,7 @@ func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) 
 		applyTmuxEnv(session, envVars)
 
 		// Register the notes vault with Obsidian before the notes pane opens it.
-		// Work vaults live at <engDir>/notes/<name>/ so the vault name is unique.
-		notesDir := filepath.Join(engDir, "notes", name)
+		notesDir := filepath.Join(engDir, "notes")
 		if mode != ModeWork {
 			notesDir = expandHome(cfg.ObsidianSyncedVault)
 		}
