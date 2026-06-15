@@ -1,0 +1,9 @@
+{
+  "sub_dir": "infra",
+  "dirs": ["nmap", "nessus", "screenshots", "other"],
+  "isolated_vault": true,
+  "promote_red_lessons": true,
+  "host_file": {"enabled": true},
+  "burp": {"enabled": false},
+  "aws": {"enabled": false}
+}

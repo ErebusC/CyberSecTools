@@ -82,8 +82,8 @@ func TestListEngagementsFilterMode(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	mode := ModeTHM
-	listEngagements(cfg, &mode)
+	sub := "THM"
+	listEngagements(cfg, &sub)
 
 	w.Close()
 	os.Stdout = old
@@ -127,8 +127,8 @@ func TestListEngagementsSortNewestFirst(t *testing.T) {
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 
-	mode := ModeTHM
-	listEngagements(cfg, &mode)
+	sub := "THM"
+	listEngagements(cfg, &sub)
 
 	w.Close()
 	os.Stdout = old

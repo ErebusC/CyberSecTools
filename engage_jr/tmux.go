@@ -23,9 +23,8 @@ func intPtr(n int) *int { return &n }
 //     the URI to the live process.
 // xdg-open is intentionally avoided: it can only dispatch to an already-running
 // instance and will silently do nothing when Obsidian is not open.
-// ENGAGE_OBSIDIAN_URL is set per-engagement via buildTmuxEnv. For work vaults,
-// it uses obsidian://open?path= (absolute path) so Obsidian opens the correct
-// vault even when many prior engagements' notes/ folders are still registered.
+// ENGAGE_OBSIDIAN_URL is set per-engagement via buildTmuxEnv. For isolated vaults
+// it uses obsidian://open?path= (absolute path) so Obsidian opens the correct vault.
 const notesCommand = `nohup "$ENGAGE_OBSIDIAN_BIN" "$ENGAGE_OBSIDIAN_URL" >/dev/null 2>&1 & cd "$ENGAGE_NOTES_DIR" 2>/dev/null`
 
 // sshCommand is the shell command used in the VPS SSH pane.
@@ -44,7 +43,8 @@ const sshCommand = `` +
 	`done`
 
 // defaultTmuxLayouts defines the built-in per-mode tmux window/pane layouts.
-// Users can override any mode's layout via "tmux_layouts" in config.json.
+// Users can override any mode's layout via "tmux_layouts" in config.json, or
+// by supplying a "tmux_layout" field in a custom template JSON.
 //
 // Pane layout for all modes:
 //
@@ -52,6 +52,16 @@ const sshCommand = `` +
 //	  pane 0 (left, 50%): main shell
 //	  pane 1 (top-right, 50%): secondary shell
 //	  pane 2 (bottom-right, 50%): persistent VPS SSH (auto-reconnects on drop)
+//	  window "notes": cd to notes dir + open Obsidian vault
+//
+//	Infra — window "main":
+//	  pane 0 (left, 50%): main shell
+//	  pane 1 (right, 50%): secondary shell
+//	  window "notes": cd to notes dir + open Obsidian vault
+//
+//	Cloud — window "main":
+//	  pane 0 (left, 50%): main shell
+//	  pane 1 (right, 50%): secondary shell
 //	  window "notes": cd to notes dir + open Obsidian vault
 //
 //	HTB / THM — window "attack":
@@ -76,6 +86,34 @@ var defaultTmuxLayouts = map[string][]TmuxWindowConfig{
 				{},
 				{SplitDirection: "h", Percent: 50},
 				{SplitDirection: "v", SplitFrom: intPtr(1), Percent: 50, Command: sshCommand},
+			},
+		},
+		{
+			Name:  "notes",
+			Panes: []TmuxPaneConfig{{Command: notesCommand}},
+		},
+	},
+	string(ModeInfra): {
+		{
+			Name:      "main",
+			FocusPane: 0,
+			Panes: []TmuxPaneConfig{
+				{},
+				{SplitDirection: "h", Percent: 50},
+			},
+		},
+		{
+			Name:  "notes",
+			Panes: []TmuxPaneConfig{{Command: notesCommand}},
+		},
+	},
+	string(ModeCloud): {
+		{
+			Name:      "main",
+			FocusPane: 0,
+			Panes: []TmuxPaneConfig{
+				{},
+				{SplitDirection: "h", Percent: 50},
 			},
 		},
 		{
@@ -192,37 +230,30 @@ func expandHome(path string) string {
 //
 //	ENGAGE_NAME, ENGAGE_MODE, ENGAGE_DIR
 //	ENGAGE_HOST_FILE, ENGAGE_NMAP_DIR, ENGAGE_BURP_DIR
-//	ENGAGE_NOTES_DIR   — <engDir>/notes for work, cfg.ObsidianSyncedVault for others
-//	ENGAGE_OBSIDIAN_BIN
-//	ENGAGE_SSH_HOST    — sshHost arg takes precedence over cfg.SSHHosts[mode]
+//	ENGAGE_NOTES_DIR   — <engDir>/notes for isolated vault, cfg.ObsidianSyncedVault for others
+//	ENGAGE_OBSIDIAN_BIN, ENGAGE_OBSIDIAN_URL
+//	ENGAGE_SSH_HOST    — sshHost arg takes precedence over cfg.SSHHosts[tmpl.SubDir]
+//	AWS_PROFILE / ENGAGE_AWS_PROFILE — set when awsProfile is non-empty
 //	TARGET_1…N, TARGETS, HTTP_TARGETS  — populated from on-disk host files
-func buildTmuxEnv(cfg *Config, mode engagementMode, name, engDir, sshHost string) []string {
+//	Plus any tmpl.Env static key-value pairs
+func buildTmuxEnv(cfg *Config, tmpl *EngagementTemplate, name, engDir, sshHost, awsProfile string) []string {
 	var env []string
 	set := func(k, v string) { env = append(env, k+"="+v) }
 
 	set("ENGAGE_NAME", name)
-	set("ENGAGE_MODE", string(mode))
+	set("ENGAGE_MODE", tmpl.SubDir)
 	set("ENGAGE_DIR", engDir)
 	set("ENGAGE_HOST_FILE", filepath.Join(engDir, "hosts"))
 	set("ENGAGE_NMAP_DIR", filepath.Join(engDir, "nmap"))
 	set("ENGAGE_BURP_DIR", filepath.Join(engDir, "burp"))
 
-	// Notes directory: isolated engagement vault for work, synced vault for others.
-	// Work vaults live directly at <engDir>/notes/.
-	if mode == ModeWork {
+	// Notes directory and Obsidian URL: isolated vault vs synced vault.
+	if tmpl.IsolatedVault {
 		set("ENGAGE_NOTES_DIR", filepath.Join(engDir, "notes"))
-	} else {
-		set("ENGAGE_NOTES_DIR", expandHome(cfg.ObsidianSyncedVault))
-	}
-
-	// Obsidian URL to open the correct vault. Work vaults use path-based opening
-	// so Obsidian finds the right vault even when multiple engagements have their
-	// notes/ folders registered (they all share the basename "notes").
-	// Non-work vaults use vault-name opening since the synced vault has a unique name.
-	if mode == ModeWork {
 		notesFile := filepath.Join(engDir, "notes", "general_notes.md")
 		set("ENGAGE_OBSIDIAN_URL", "obsidian://open?path="+url.QueryEscape(notesFile))
 	} else {
+		set("ENGAGE_NOTES_DIR", expandHome(cfg.ObsidianSyncedVault))
 		syncedVault := expandHome(cfg.ObsidianSyncedVault)
 		set("ENGAGE_OBSIDIAN_URL", "obsidian://open?vault="+url.QueryEscape(filepath.Base(syncedVault)))
 	}
@@ -232,10 +263,16 @@ func buildTmuxEnv(cfg *Config, mode engagementMode, name, engDir, sshHost string
 	// SSH host: CLI flag takes precedence over per-mode config default.
 	host := sshHost
 	if host == "" && cfg.SSHHosts != nil {
-		host = cfg.SSHHosts[string(mode)]
+		host = cfg.SSHHosts[tmpl.SubDir]
 	}
 	if host != "" {
 		set("ENGAGE_SSH_HOST", host)
+	}
+
+	// AWS profile for cloud engagements.
+	if awsProfile != "" {
+		set("AWS_PROFILE", awsProfile)
+		set("ENGAGE_AWS_PROFILE", awsProfile)
 	}
 
 	// Individual targets from the hosts file written by processHostFile.
@@ -250,6 +287,11 @@ func buildTmuxEnv(cfg *Config, mode engagementMode, name, engDir, sshHost string
 	httpHosts := readHostsFile(filepath.Join(engDir, "http_hosts"))
 	if len(httpHosts) > 0 {
 		set("HTTP_TARGETS", strings.Join(httpHosts, " "))
+	}
+
+	// Template-specific static env vars.
+	for k, v := range tmpl.Env {
+		set(k, v)
 	}
 
 	return env
@@ -270,15 +312,19 @@ func applyTmuxEnv(session string, envVars []string) {
 	}
 }
 
-// getLayout returns the window layout for the given mode, preferring any
-// user-defined layout from config over the built-in default.
-func getLayout(cfg *Config, mode engagementMode) []TmuxWindowConfig {
+// getLayout returns the window layout for the given mode and template, preferring
+// (highest priority first): user config.json tmux_layouts, template tmux_layout,
+// built-in defaultTmuxLayouts.
+func getLayout(cfg *Config, tmpl *EngagementTemplate) []TmuxWindowConfig {
 	if cfg.TmuxLayouts != nil {
-		if layout, ok := cfg.TmuxLayouts[string(mode)]; ok {
+		if layout, ok := cfg.TmuxLayouts[tmpl.SubDir]; ok {
 			return layout
 		}
 	}
-	return defaultTmuxLayouts[string(mode)]
+	if len(tmpl.TmuxLayout) > 0 {
+		return tmpl.TmuxLayout
+	}
+	return defaultTmuxLayouts[tmpl.SubDir]
 }
 
 // applyLayout creates windows and panes according to the layout definition.
@@ -428,15 +474,14 @@ func tmuxServerCanAccess(dir string) bool {
 
 // launchTmux attaches to or creates the tmux session for the named engagement.
 //
-// On first run: creates the session, injects engagement env vars (including
-// ENGAGE_SSH_HOST from sshHost or cfg.SSHHosts), applies the window/pane layout,
-// then attaches.
+// On first run: creates the session, injects engagement env vars, applies the
+// window/pane layout, then attaches.
 //
 // On subsequent runs (-open): attaches directly. If sshHost is non-empty the
 // ENGAGE_SSH_HOST variable in the existing session is updated before attaching.
 //
 // Falls back to a plain shell if tmux is not in PATH.
-func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) {
+func launchTmux(cfg *Config, tmpl *EngagementTemplate, name, engDir, sshHost, awsProfile string) {
 	if !tmuxAvailable() {
 		logWarn("tmux not found in PATH — falling back to plain shell")
 		launchPlainShell(engDir)
@@ -457,15 +502,15 @@ func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) 
 			return
 		}
 
-		// Ensure the notes directory and Obsidian vault skeleton exist for work.
-		if mode == ModeWork {
+		// Ensure the notes directory and Obsidian vault skeleton exist for isolated vaults.
+		if tmpl.IsolatedVault {
 			notesDir := filepath.Join(engDir, "notes", ".obsidian")
 			if err := os.MkdirAll(notesDir, 0755); err != nil {
 				logWarn("could not create notes vault: %v", err)
 			}
 		}
 
-		envVars := buildTmuxEnv(cfg, mode, name, engDir, sshHost)
+		envVars := buildTmuxEnv(cfg, tmpl, name, engDir, sshHost, awsProfile)
 
 		// Pass env vars to new-session so the initial pane's shell inherits them.
 		args := []string{"new-session", "-d", "-s", session, "-c", engDir}
@@ -483,15 +528,17 @@ func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) 
 		applyTmuxEnv(session, envVars)
 
 		// Register the notes vault with Obsidian before the notes pane opens it.
-		notesDir := filepath.Join(engDir, "notes")
-		if mode != ModeWork {
+		var notesDir string
+		if tmpl.IsolatedVault {
+			notesDir = filepath.Join(engDir, "notes")
+		} else {
 			notesDir = expandHome(cfg.ObsidianSyncedVault)
 		}
 		if err := ensureObsidianVault(notesDir); err != nil {
 			logWarn("could not register obsidian vault: %v", err)
 		}
 
-		applyLayout(session, engDir, getLayout(cfg, mode), envVars)
+		applyLayout(session, engDir, getLayout(cfg, tmpl), envVars)
 
 		// Return to the first window before attaching.
 		exec.Command("tmux", "select-window", "-t", session+":0").Run()

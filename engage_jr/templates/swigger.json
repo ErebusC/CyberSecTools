@@ -1,0 +1,9 @@
+{
+  "sub_dir": "swigger",
+  "dirs": [],
+  "isolated_vault": false,
+  "promote_red_lessons": false,
+  "host_file": {"enabled": false},
+  "burp": {"enabled": true},
+  "aws": {"enabled": false}
+}

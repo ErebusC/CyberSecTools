@@ -48,6 +48,15 @@ func TestReadHostsFileMissing(t *testing.T) {
 	}
 }
 
+func loadTmuxTestTemplate(t *testing.T, name string) *EngagementTemplate {
+	t.Helper()
+	tmpl, err := loadTemplate(name)
+	if err != nil {
+		t.Fatalf("loadTemplate(%q): %v", name, err)
+	}
+	return tmpl
+}
+
 func TestBuildTmuxEnvWorkMode(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "hosts"), []byte("10.10.10.1\n10.10.10.2\n"), 0644)
@@ -58,8 +67,9 @@ func TestBuildTmuxEnvWorkMode(t *testing.T) {
 		ObsidianSyncedVault: "~/Notes",
 		SSHHosts:            map[string]string{"work": "lhack"},
 	}
+	tmpl := loadTmuxTestTemplate(t, "work")
 
-	env := buildTmuxEnv(cfg, ModeWork, "acmecorp_1", dir, "")
+	env := buildTmuxEnv(cfg, tmpl, "acmecorp_1", dir, "", "")
 
 	find := func(key string) string {
 		prefix := key + "="
@@ -112,8 +122,9 @@ func TestBuildTmuxEnvSSHHostCLIOverride(t *testing.T) {
 		ObsidianSyncedVault: "~/Notes",
 		SSHHosts:            map[string]string{"work": "default-vps"},
 	}
+	tmpl := loadTmuxTestTemplate(t, "work")
 
-	env := buildTmuxEnv(cfg, ModeWork, "test", dir, "override-vps")
+	env := buildTmuxEnv(cfg, tmpl, "test", dir, "override-vps", "")
 
 	for _, e := range env {
 		if strings.HasPrefix(e, "ENGAGE_SSH_HOST=") {
@@ -129,8 +140,9 @@ func TestBuildTmuxEnvSSHHostCLIOverride(t *testing.T) {
 func TestBuildTmuxEnvNoHosts(t *testing.T) {
 	dir := t.TempDir() // no host files written
 	cfg := &Config{ObsidianBin: "obsidian", ObsidianSyncedVault: "~/Notes"}
+	tmpl := loadTmuxTestTemplate(t, "THM")
 
-	env := buildTmuxEnv(cfg, ModeTHM, "Lab1", dir, "")
+	env := buildTmuxEnv(cfg, tmpl, "Lab1", dir, "", "")
 
 	// Core vars must always be present.
 	required := []string{
@@ -165,25 +177,51 @@ func TestBuildTmuxEnvSyncedVaultForNonWork(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &Config{ObsidianBin: "obsidian", ObsidianSyncedVault: "/home/user/Notes"}
 
-	for _, mode := range []engagementMode{ModeHTB, ModeTHM, ModeExam, ModeSwigger} {
-		t.Run(string(mode), func(t *testing.T) {
-			env := buildTmuxEnv(cfg, mode, "test", dir, "")
+	for _, name := range []string{"HTB", "THM", "exam", "swigger"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl := loadTmuxTestTemplate(t, name)
+			env := buildTmuxEnv(cfg, tmpl, "test", dir, "", "")
 			for _, e := range env {
 				if strings.HasPrefix(e, "ENGAGE_NOTES_DIR=") {
 					got := e[len("ENGAGE_NOTES_DIR="):]
 					if got != "/home/user/Notes" {
-						t.Errorf("mode %s: ENGAGE_NOTES_DIR = %q, want /home/user/Notes", mode, got)
+						t.Errorf("mode %s: ENGAGE_NOTES_DIR = %q, want /home/user/Notes", name, got)
 					}
 					return
 				}
 			}
-			t.Errorf("mode %s: ENGAGE_NOTES_DIR not set", mode)
+			t.Errorf("mode %s: ENGAGE_NOTES_DIR not set", name)
 		})
 	}
 }
 
+func TestBuildTmuxEnvAWSProfile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &Config{ObsidianBin: "obsidian", ObsidianSyncedVault: "~/Notes"}
+	tmpl := loadTmuxTestTemplate(t, "cloud")
+
+	env := buildTmuxEnv(cfg, tmpl, "cloud-audit", dir, "", "client-a")
+
+	find := func(key string) string {
+		prefix := key + "="
+		for _, e := range env {
+			if strings.HasPrefix(e, prefix) {
+				return e[len(prefix):]
+			}
+		}
+		return ""
+	}
+
+	if find("AWS_PROFILE") != "client-a" {
+		t.Errorf("AWS_PROFILE = %q, want client-a", find("AWS_PROFILE"))
+	}
+	if find("ENGAGE_AWS_PROFILE") != "client-a" {
+		t.Errorf("ENGAGE_AWS_PROFILE = %q, want client-a", find("ENGAGE_AWS_PROFILE"))
+	}
+}
+
 func TestDefaultLayoutsExistForAllModes(t *testing.T) {
-	modes := []engagementMode{ModeWork, ModeHTB, ModeTHM, ModeExam, ModeSwigger}
+	modes := []engagementMode{ModeWork, ModeInfra, ModeCloud, ModeHTB, ModeTHM, ModeExam, ModeSwigger}
 	for _, mode := range modes {
 		t.Run(string(mode), func(t *testing.T) {
 			layout, ok := defaultTmuxLayouts[string(mode)]
@@ -198,10 +236,11 @@ func TestGetLayoutPrefersConfig(t *testing.T) {
 	custom := []TmuxWindowConfig{{Name: "custom"}}
 	cfg := &Config{
 		TmuxLayouts: map[string][]TmuxWindowConfig{
-			string(ModeWork): custom,
+			"work": custom,
 		},
 	}
-	got := getLayout(cfg, ModeWork)
+	tmpl := loadTmuxTestTemplate(t, "work")
+	got := getLayout(cfg, tmpl)
 	if len(got) != 1 || got[0].Name != "custom" {
 		t.Errorf("getLayout did not prefer config-defined layout")
 	}
@@ -209,8 +248,20 @@ func TestGetLayoutPrefersConfig(t *testing.T) {
 
 func TestGetLayoutFallsBackToDefault(t *testing.T) {
 	cfg := &Config{} // no custom layouts
-	got := getLayout(cfg, ModeHTB)
+	tmpl := loadTmuxTestTemplate(t, "HTB")
+	got := getLayout(cfg, tmpl)
 	if len(got) == 0 {
 		t.Error("getLayout returned empty layout for HTB with no config override")
+	}
+}
+
+func TestGetLayoutPrefersTemplate(t *testing.T) {
+	cfg := &Config{} // no config overrides
+	// Cloud template has no tmux_layout in JSON, so it falls back to defaultTmuxLayouts.
+	// Verify the fallback path works for cloud.
+	tmpl := loadTmuxTestTemplate(t, "cloud")
+	got := getLayout(cfg, tmpl)
+	if len(got) == 0 {
+		t.Error("getLayout returned empty layout for cloud")
 	}
 }

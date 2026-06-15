@@ -22,10 +22,6 @@ const (
 	defaultObsidianVault   = "~/Notes"
 )
 
-// defaultWorkDirs is the subdirectory layout created under a work engagement
-// when no custom work_dirs are specified in the config file.
-var defaultWorkDirs = []string{"nmap", "burp", "nessus", "other"}
-
 // TmuxPaneConfig describes a single pane within a tmux window layout.
 // The first pane in a window always exists on creation; subsequent panes are
 // created by splitting the pane at SplitFrom (or the previous pane if nil).
@@ -48,13 +44,12 @@ type Config struct {
 	BurpJar             string                        `json:"burp_jar"`
 	BaseDir             string                        `json:"base_dir"`
 	BurpTimeoutSecs     int                           `json:"burp_timeout_secs"`
-	WorkDirs            []string                      `json:"work_dirs"`
 	TmuxEnabled         *bool                         `json:"tmux_enabled"`          // nil = use default (true); explicit false disables tmux
 	TmuxPrefix          string                        `json:"tmux_prefix"`           // prepended to session name; empty = use engagement name directly
 	TmuxLayouts         map[string][]TmuxWindowConfig `json:"tmux_layouts"`          // keyed by mode string; overrides built-in defaults
 	SSHHosts            map[string]string             `json:"ssh_hosts"`             // per-mode VPS/jump host alias; defers to ~/.ssh/config for key/port-forward details
 	ObsidianBin         string                        `json:"obsidian_bin"`          // obsidian binary or full command
-	ObsidianSyncedVault string                        `json:"obsidian_synced_vault"` // synced vault for HTB/THM/exam/swigger (default ~/Notes)
+	ObsidianSyncedVault string                        `json:"obsidian_synced_vault"` // synced vault for non-isolated modes (default ~/Notes)
 }
 
 // tmuxEnabled reports whether tmux session management is active.
@@ -78,7 +73,6 @@ func loadConfig(configPath, cliBurpJar, cliBaseDir string) (*Config, error) {
 		BurpJar:             filepath.Join(home, "BurpSuitePro", "burpsuite_pro.jar"),
 		BaseDir:             filepath.Join("/", "Share"),
 		BurpTimeoutSecs:     defaultBurpTimeoutSecs,
-		WorkDirs:            defaultWorkDirs,
 		ObsidianBin:         "obsidian",
 		ObsidianSyncedVault: defaultObsidianVault,
 	}
@@ -101,9 +95,6 @@ func loadConfig(configPath, cliBurpJar, cliBaseDir string) (*Config, error) {
 		}
 		if fileCfg.BurpTimeoutSecs > 0 {
 			cfg.BurpTimeoutSecs = fileCfg.BurpTimeoutSecs
-		}
-		if len(fileCfg.WorkDirs) > 0 {
-			cfg.WorkDirs = fileCfg.WorkDirs
 		}
 		if fileCfg.TmuxEnabled != nil {
 			cfg.TmuxEnabled = fileCfg.TmuxEnabled

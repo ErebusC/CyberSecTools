@@ -1,0 +1,9 @@
+{
+  "sub_dir": "cloud",
+  "dirs": ["cloud-audit", "cloud-splaining", "scoutSuite", "prowler", "others"],
+  "isolated_vault": true,
+  "promote_red_lessons": false,
+  "host_file": {"enabled": false},
+  "burp": {"enabled": false},
+  "aws": {"enabled": true, "profiles_file": true, "default_output": "json"}
+}

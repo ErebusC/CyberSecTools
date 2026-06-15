@@ -23,18 +23,23 @@ engage_jr [mode] [options] <name> [hostfile]
 
 | Flag | Directory | Purpose |
 |------|-----------|---------|
-| `-w` | `<base_dir>/work/<name>` | Work engagement (default) |
+| _(default)_ | `<base_dir>/work/<name>` | Web-app work engagement |
+| `-w infra` | `<base_dir>/infra/<name>` | Infrastructure engagement |
+| `-w cloud` | `<base_dir>/cloud/<name>` | Cloud audit engagement |
 | `-t` | `<base_dir>/THM/<name>` | TryHackMe |
 | `-b` | `<base_dir>/HTB/<name>` | HackTheBox |
 | `-e` | `<base_dir>/exam/<name>` | Exam |
 | `-p` | `<base_dir>/swigger/<name>` | PortSwigger |
+| `-template <name>` | `<base_dir>/<sub_dir>/<name>` | Any named template |
 
-Work mode creates tool subdirectories (`nmap/`, `burp/`, `nessus/`, `other/` by default) and processes the host file. Other modes just create the engagement directory.
+Work/infra mode creates tool subdirectories and processes the host file. Cloud mode accepts an AWS profiles file instead. Custom templates live in `~/.config/engage_jr/templates/<name>.json`.
 
 ### Examples
 
 ```bash
-engage_jr ClientName hosts.txt              # work engagement with host file
+engage_jr ClientName hosts.txt              # web-app work engagement with host file
+engage_jr -w infra ClientName hosts.txt     # infrastructure engagement
+engage_jr -w cloud AWSClient profiles.txt  # cloud audit; configures ~/.aws/credentials
 engage_jr -t Relevant                       # TryHackMe lab
 engage_jr -b legacy-box -ssh vps           # HTB + open SSH to VPS in a pane
 engage_jr -list                             # show all engagements
@@ -95,7 +100,6 @@ File: `~/.config/engage_jr/config.json`
   "burp_jar":              "~/BurpSuitePro/burpsuite_pro.jar",
   "base_dir":              "/Share",
   "burp_timeout_secs":     90,
-  "work_dirs":             ["nmap", "burp", "nessus", "gobuster", "screenshots"],
 
   "tmux_enabled":          true,
   "tmux_prefix":           "",
@@ -136,13 +140,14 @@ File: `~/.config/engage_jr/config.json`
 | Burp jar path | `burp_jar` | `ENGAGE_BURP_JAR` | `~/BurpSuitePro/burpsuite_pro.jar` |
 | Base directory | `base_dir` | `ENGAGE_BASE_DIR` | `/Share` |
 | Burp timeout (s) | `burp_timeout_secs` | `ENGAGE_BURP_TIMEOUT` | `60` |
-| Work subdirs | `work_dirs` | — | `nmap, burp, nessus, other` |
 | tmux enabled | `tmux_enabled` | `ENGAGE_TMUX` (`1`/`true` or `0`/`false`) | **`true`** |
 | tmux session prefix | `tmux_prefix` | `ENGAGE_TMUX_SESSION_PREFIX` | _(none — bare engagement name)_ |
 | Obsidian binary | `obsidian_bin` | `ENGAGE_OBSIDIAN_BIN` | `obsidian` |
 | Obsidian synced vault | `obsidian_synced_vault` | `ENGAGE_OBSIDIAN_VAULT` | `~/Notes` |
 | VPS SSH host per mode | `ssh_hosts` | — | _(none)_ |
 | Custom tmux layouts | `tmux_layouts` | — | _(built-in per-mode defaults)_ |
+
+> **Note:** The `work_dirs` config key was removed in v2.5. Directory layouts are now defined in engagement templates. To customise directories for work engagements, create `~/.config/engage_jr/templates/work.json` with a custom `"dirs"` array.
 
 ---
 

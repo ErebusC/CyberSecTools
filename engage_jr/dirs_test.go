@@ -6,13 +6,24 @@ import (
 	"testing"
 )
 
+// loadTestTemplate is a helper that fatals on error — templates must be present.
+func loadTestTemplate(t *testing.T, name string) *EngagementTemplate {
+	t.Helper()
+	tmpl, err := loadTemplate(name)
+	if err != nil {
+		t.Fatalf("loadTemplate(%q) failed: %v", name, err)
+	}
+	return tmpl
+}
+
 func TestBuildDirWork(t *testing.T) {
 	base := t.TempDir()
-	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar", WorkDirs: defaultWorkDirs}
+	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar"}
+	tmpl := loadTestTemplate(t, "work")
 
-	dir, err := buildDir(cfg, ModeWork, "TestClient")
+	dir, err := buildDir(cfg, tmpl, "TestClient")
 	if err != nil {
-		t.Fatalf("buildDir(ModeWork) failed: %v", err)
+		t.Fatalf("buildDir(work) failed: %v", err)
 	}
 
 	expected := filepath.Join(base, "work", "TestClient")
@@ -20,7 +31,7 @@ func TestBuildDirWork(t *testing.T) {
 		t.Errorf("dir = %q, want %q", dir, expected)
 	}
 
-	for _, sub := range defaultWorkDirs {
+	for _, sub := range tmpl.Dirs {
 		path := filepath.Join(dir, sub)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("expected work subdir %q to exist: %v", sub, err)
@@ -34,52 +45,83 @@ func TestBuildDirWork(t *testing.T) {
 	}
 }
 
-func TestBuildDirCustomWorkDirs(t *testing.T) {
+func TestBuildDirInfra(t *testing.T) {
 	base := t.TempDir()
-	custom := []string{"recon", "exploits", "loot"}
-	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar", WorkDirs: custom}
+	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar"}
+	tmpl := loadTestTemplate(t, "infra")
 
-	dir, err := buildDir(cfg, ModeWork, "CustomClient")
+	dir, err := buildDir(cfg, tmpl, "InfraClient")
 	if err != nil {
-		t.Fatalf("buildDir with custom WorkDirs failed: %v", err)
+		t.Fatalf("buildDir(infra) failed: %v", err)
 	}
 
-	for _, sub := range custom {
+	expected := filepath.Join(base, "infra", "InfraClient")
+	if dir != expected {
+		t.Errorf("dir = %q, want %q", dir, expected)
+	}
+
+	for _, sub := range tmpl.Dirs {
 		path := filepath.Join(dir, sub)
 		if _, err := os.Stat(path); err != nil {
-			t.Errorf("expected custom subdir %q to exist: %v", sub, err)
+			t.Errorf("expected infra subdir %q to exist: %v", sub, err)
 		}
 	}
-	// Default dirs should NOT be created.
-	for _, sub := range defaultWorkDirs {
-		if contains(custom, sub) {
-			continue
-		}
+
+	// Infra has no Burp — no goroutine should have been spawned for it.
+	if tmpl.Burp.Enabled {
+		t.Error("infra template should not have Burp enabled")
+	}
+}
+
+func TestBuildDirCloud(t *testing.T) {
+	base := t.TempDir()
+	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar"}
+	tmpl := loadTestTemplate(t, "cloud")
+
+	dir, err := buildDir(cfg, tmpl, "CloudClient")
+	if err != nil {
+		t.Fatalf("buildDir(cloud) failed: %v", err)
+	}
+
+	expected := filepath.Join(base, "cloud", "CloudClient")
+	if dir != expected {
+		t.Errorf("dir = %q, want %q", dir, expected)
+	}
+
+	for _, sub := range tmpl.Dirs {
 		path := filepath.Join(dir, sub)
-		if _, err := os.Stat(path); err == nil {
-			t.Errorf("unexpected default subdir %q exists with custom WorkDirs", sub)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected cloud subdir %q to exist: %v", sub, err)
 		}
+	}
+
+	if !tmpl.AWS.Enabled {
+		t.Error("cloud template should have AWS enabled")
+	}
+	if tmpl.HostFile.Enabled {
+		t.Error("cloud template should not have host file enabled")
 	}
 }
 
 func TestBuildDirNonWorkModes(t *testing.T) {
 	cases := []struct {
-		mode    engagementMode
+		name    string
 		subPath string
 	}{
-		{ModeTHM, "THM"},
-		{ModeHTB, "HTB"},
-		{ModeSwigger, "swigger"},
+		{"THM", "THM"},
+		{"HTB", "HTB"},
+		{"swigger", "swigger"},
 	}
 
 	for _, c := range cases {
-		t.Run(string(c.mode), func(t *testing.T) {
+		t.Run(c.name, func(t *testing.T) {
 			base := t.TempDir()
-			cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar", WorkDirs: defaultWorkDirs}
+			cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar"}
+			tmpl := loadTestTemplate(t, c.name)
 
-			dir, err := buildDir(cfg, c.mode, "TestLab")
+			dir, err := buildDir(cfg, tmpl, "TestLab")
 			if err != nil {
-				t.Fatalf("buildDir(%s) failed: %v", c.mode, err)
+				t.Fatalf("buildDir(%s) failed: %v", c.name, err)
 			}
 
 			expected := filepath.Join(base, c.subPath, "TestLab")
@@ -90,15 +132,17 @@ func TestBuildDirNonWorkModes(t *testing.T) {
 				t.Errorf("directory %q does not exist: %v", dir, err)
 			}
 
-			// Lab modes must not create tool subdirectories.
-			for _, sub := range defaultWorkDirs {
-				path := filepath.Join(dir, sub)
-				if _, err := os.Stat(path); err == nil {
-					t.Errorf("unexpected subdir %q created for mode %s", sub, c.mode)
+			// Lab modes have no tool subdirectories.
+			if len(tmpl.Dirs) > 0 {
+				for _, sub := range tmpl.Dirs {
+					path := filepath.Join(dir, sub)
+					if _, err := os.Stat(path); err != nil {
+						t.Errorf("expected subdir %q to exist: %v", sub, err)
+					}
 				}
 			}
 
-			// Metadata file should still be written for all modes.
+			// Metadata file should be written for all modes.
 			metaPath := filepath.Join(dir, metaFileName)
 			if _, err := os.Stat(metaPath); err != nil {
 				t.Errorf("expected metadata file in non-work dir: %v", err)
@@ -109,11 +153,12 @@ func TestBuildDirNonWorkModes(t *testing.T) {
 
 func TestBuildDirExam(t *testing.T) {
 	base := t.TempDir()
-	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar", WorkDirs: defaultWorkDirs}
+	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar"}
+	tmpl := loadTestTemplate(t, "exam")
 
-	dir, err := buildDir(cfg, ModeExam, "TestExam")
+	dir, err := buildDir(cfg, tmpl, "TestExam")
 	if err != nil {
-		t.Fatalf("buildDir(ModeExam) failed: %v", err)
+		t.Fatalf("buildDir(exam) failed: %v", err)
 	}
 
 	expected := filepath.Join(base, "exam", "TestExam")
@@ -121,8 +166,8 @@ func TestBuildDirExam(t *testing.T) {
 		t.Errorf("dir = %q, want %q", dir, expected)
 	}
 
-	// Exam mode must create tool subdirectories like work mode.
-	for _, sub := range defaultWorkDirs {
+	// Exam creates tool subdirectories.
+	for _, sub := range tmpl.Dirs {
 		path := filepath.Join(dir, sub)
 		if _, err := os.Stat(path); err != nil {
 			t.Errorf("expected exam subdir %q to exist: %v", sub, err)
@@ -136,22 +181,15 @@ func TestBuildDirExam(t *testing.T) {
 	}
 }
 
-func TestBuildDirUnknownMode(t *testing.T) {
-	cfg := &Config{BaseDir: t.TempDir(), BurpJar: "/nonexistent/burp.jar"}
-	_, err := buildDir(cfg, "bogus", "TestLab")
-	if err == nil {
-		t.Error("expected error for unknown mode, got nil")
-	}
-}
-
 func TestBuildDirIdempotent(t *testing.T) {
 	base := t.TempDir()
 	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar"}
+	tmpl := loadTestTemplate(t, "THM")
 
-	if _, err := buildDir(cfg, ModeTHM, "Repeat"); err != nil {
+	if _, err := buildDir(cfg, tmpl, "Repeat"); err != nil {
 		t.Fatalf("first call failed: %v", err)
 	}
-	if _, err := buildDir(cfg, ModeTHM, "Repeat"); err != nil {
+	if _, err := buildDir(cfg, tmpl, "Repeat"); err != nil {
 		t.Errorf("second call failed (not idempotent): %v", err)
 	}
 }
@@ -161,9 +199,10 @@ func TestBuildDirDryRun(t *testing.T) {
 	defer func() { dryRun = false }()
 
 	base := t.TempDir()
-	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar", WorkDirs: defaultWorkDirs}
+	cfg := &Config{BaseDir: base, BurpJar: "/nonexistent/burp.jar"}
+	tmpl := loadTestTemplate(t, "work")
 
-	dir, err := buildDir(cfg, ModeWork, "DryClient")
+	dir, err := buildDir(cfg, tmpl, "DryClient")
 	if err != nil {
 		t.Fatalf("buildDir dry-run failed: %v", err)
 	}

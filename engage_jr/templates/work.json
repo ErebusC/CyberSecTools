@@ -1,0 +1,9 @@
+{
+  "sub_dir": "work",
+  "dirs": ["nmap", "burp", "nessus", "other"],
+  "isolated_vault": true,
+  "promote_red_lessons": true,
+  "host_file": {"enabled": true},
+  "burp": {"enabled": true},
+  "aws": {"enabled": false}
+}

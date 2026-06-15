@@ -1,0 +1,9 @@
+{
+  "sub_dir": "exam",
+  "dirs": ["nmap", "burp", "nessus", "other"],
+  "isolated_vault": false,
+  "promote_red_lessons": false,
+  "host_file": {"enabled": true},
+  "burp": {"enabled": false},
+  "aws": {"enabled": false}
+}

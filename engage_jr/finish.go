@@ -74,8 +74,8 @@ func promptKeySelection(reader *bufio.Reader, keys []gpgKey, prompt string) stri
 	return input
 }
 
-func finishEngagement(cfg *Config, mode engagementMode, name string) {
-	engDir, err := resolveEngagementDir(cfg, mode, name)
+func finishEngagement(cfg *Config, tmpl *EngagementTemplate, name string) {
+	engDir, err := resolveEngagementDir(cfg, tmpl.SubDir, name)
 	if err != nil {
 		fatal("%v", err)
 	}
@@ -175,8 +175,8 @@ func finishEngagement(cfg *Config, mode engagementMode, name string) {
 
 	logInfo("finished: %s", finalPath)
 
-	// Promote redacted lessons to the synced vault (work mode only).
-	if mode == ModeWork {
+	// Promote redacted lessons to the synced vault when the template enables it.
+	if tmpl.PromoteRedLessons {
 		dest, err := promoteRedLessons(engDir, name, reader)
 		if err != nil {
 			logWarn("could not promote lessons to synced vault: %v", err)
