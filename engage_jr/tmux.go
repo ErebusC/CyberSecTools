@@ -28,6 +28,21 @@ func intPtr(n int) *int { return &n }
 // vault even when many prior engagements' notes/ folders are still registered.
 const notesCommand = `nohup "$ENGAGE_OBSIDIAN_BIN" "$ENGAGE_OBSIDIAN_URL" >/dev/null 2>&1 & cd "$ENGAGE_NOTES_DIR" 2>/dev/null`
 
+// sshCommand is the shell command used in the VPS SSH pane.
+// When ENGAGE_SSH_HOST is unset the loop exits immediately (no-op).
+// On a non-clean exit (network drop, server restart, etc.) it waits 10 s then
+// reconnects. A clean exit (ssh returns 0 — user typed exit/logout) breaks the
+// loop and drops back to the local shell. ConnectTimeout=15 prevents the pane
+// hanging indefinitely when the host is unreachable.
+const sshCommand = `` +
+	`while true; do ` +
+	`[ -z "$ENGAGE_SSH_HOST" ] && break; ` +
+	`ssh -o ConnectTimeout=15 "$ENGAGE_SSH_HOST"; ` +
+	`code=$?; [ "$code" -eq 0 ] && break; ` +
+	`printf '\n[engage_jr] SSH to %s exited (%d) -- retrying in 10s\n' "$ENGAGE_SSH_HOST" "$code"; ` +
+	`sleep 10; ` +
+	`done`
+
 // defaultTmuxLayouts defines the built-in per-mode tmux window/pane layouts.
 // Users can override any mode's layout via "tmux_layouts" in config.json.
 //
@@ -35,8 +50,8 @@ const notesCommand = `nohup "$ENGAGE_OBSIDIAN_BIN" "$ENGAGE_OBSIDIAN_URL" >/dev/
 //
 //	Work — window "main":
 //	  pane 0 (left, 50%): main shell
-//	  pane 1 (top-right, 50%): recon_jr
-//	  pane 2 (bottom-right, 50%): VPS SSH ($ENGAGE_SSH_HOST)
+//	  pane 1 (top-right, 50%): secondary shell
+//	  pane 2 (bottom-right, 50%): persistent VPS SSH (auto-reconnects on drop)
 //	  window "notes": cd to notes dir + open Obsidian vault
 //
 //	HTB / THM — window "attack":
@@ -60,8 +75,7 @@ var defaultTmuxLayouts = map[string][]TmuxWindowConfig{
 			Panes: []TmuxPaneConfig{
 				{},
 				{SplitDirection: "h", Percent: 50},
-				{SplitDirection: "v", SplitFrom: intPtr(1), Percent: 50,
-					Command: `[ -n "$ENGAGE_SSH_HOST" ] && ssh $ENGAGE_SSH_HOST`},
+				{SplitDirection: "v", SplitFrom: intPtr(1), Percent: 50, Command: sshCommand},
 			},
 		},
 		{
@@ -268,18 +282,23 @@ func getLayout(cfg *Config, mode engagementMode) []TmuxWindowConfig {
 }
 
 // applyLayout creates windows and panes according to the layout definition.
-// Environment variables set via applyTmuxEnv are inherited by new panes.
+// envVars (KEY=VALUE pairs) are injected via -e into every new-window and
+// split-window call so each pane's shell has the engagement environment
+// directly in its process env, independent of tmux session-env inheritance.
 // Each pane's unique tmux ID (e.g. %3) is captured on creation so that
 // send-keys and select-pane targets are independent of pane-base-index.
-func applyLayout(session, engDir string, windows []TmuxWindowConfig) {
+func applyLayout(session, engDir string, windows []TmuxWindowConfig, envVars []string) {
 	for winIdx, win := range windows {
 		var windowTarget string
 		if winIdx == 0 {
 			exec.Command("tmux", "rename-window", "-t", session+":0", win.Name).Run()
 			windowTarget = session + ":" + win.Name
 		} else {
-			if err := exec.Command("tmux", "new-window", "-t", session,
-				"-n", win.Name, "-c", engDir).Run(); err != nil {
+			args := []string{"new-window", "-t", session, "-n", win.Name, "-c", engDir}
+			for _, e := range envVars {
+				args = append(args, "-e", e)
+			}
+			if err := exec.Command("tmux", args...).Run(); err != nil {
 				logWarn("could not create tmux window %q: %v", win.Name, err)
 				continue
 			}
@@ -317,6 +336,9 @@ func applyLayout(session, engDir string, windows []TmuxWindowConfig) {
 				"-t", splitTarget,
 				"-c", engDir,
 				"-P", "-F", "#{pane_id}",
+			}
+			for _, e := range envVars {
+				args = append(args, "-e", e)
 			}
 			if pane.SplitDirection == "v" {
 				args = append(args, "-v")
@@ -469,7 +491,7 @@ func launchTmux(cfg *Config, mode engagementMode, name, engDir, sshHost string) 
 			logWarn("could not register obsidian vault: %v", err)
 		}
 
-		applyLayout(session, engDir, getLayout(cfg, mode))
+		applyLayout(session, engDir, getLayout(cfg, mode), envVars)
 
 		// Return to the first window before attaching.
 		exec.Command("tmux", "select-window", "-t", session+":0").Run()
