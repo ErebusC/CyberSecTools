@@ -445,7 +445,7 @@ func tmuxServerCanAccess(dir string) bool {
 		return true
 	}
 
-	tmp, err := os.CreateTemp("", "engage_access_*")
+	tmp, err := os.CreateTemp(dir, "engage_access_*")
 	if err != nil {
 		return true
 	}

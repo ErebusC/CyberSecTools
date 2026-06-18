@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -117,12 +118,22 @@ func finishEngagement(cfg *Config, tmpl *EngagementTemplate, name string) {
 
 	finalPath := filepath.Join(filepath.Dir(engDir), fmt.Sprintf("%s_%s.tar.gpg", name, "DR"))
 
-	tmpFile, err := os.CreateTemp("", "engage-*.tar.gpg")
+	localTmp, err := os.UserCacheDir()
+	if err != nil {
+		localTmp = os.TempDir()
+	} else {
+		localTmp = filepath.Join(localTmp, "engage_jr")
+		if err := os.MkdirAll(localTmp, 0700); err != nil {
+			localTmp = os.TempDir()
+		}
+	}
+	tmpFile, err := os.CreateTemp(localTmp, "engage-*.tar.gpg")
 	if err != nil {
 		fatal("creating temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
 	tmpFile.Close()
+	os.Remove(tmpPath)
 	defer os.Remove(tmpPath)
 
 	logInfo("encrypting %s → %s", engDir, finalPath)
@@ -165,11 +176,17 @@ func finishEngagement(cfg *Config, tmpl *EngagementTemplate, name string) {
 	}
 
 	logInfo("moving to %s", finalPath)
-	data, err := os.ReadFile(tmpPath)
+	src, err := os.Open(tmpPath)
 	if err != nil {
-		fatal("reading temp file: %v", err)
+		fatal("opening temp file: %v", err)
 	}
-	if err := os.WriteFile(finalPath, data, 0644); err != nil {
+	defer src.Close()
+	dst, err := os.OpenFile(finalPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		fatal("creating output file: %v", err)
+	}
+	defer dst.Close()
+	if _, err := io.CopyBuffer(dst, src, make([]byte, 4*1024*1024)); err != nil {
 		fatal("writing output: %v", err)
 	}
 
